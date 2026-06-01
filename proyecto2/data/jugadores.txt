@@ -1,0 +1,18 @@
+[
+  {
+    "id": "1780326567545",
+    "nombre": "Manu",
+    "puntaje": 1690,
+    "modo": "2jugadores",
+    "nivel": 2,
+    "fecha": "1/6/2026"
+  },
+  {
+    "id": "1780326567554",
+    "nombre": "Mama",
+    "puntaje": 3550,
+    "modo": "2jugadores",
+    "nivel": 2,
+    "fecha": "1/6/2026"
+  }
+]

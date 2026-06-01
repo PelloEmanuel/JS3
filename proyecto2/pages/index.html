@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="es" data-tema="oscuro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pac-Man - Juego</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+  <link rel="stylesheet" href="../style/estilos.css" />
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════════════════════
+       NAVBAR
+  ══════════════════════════════════════════════════════ -->
+  <nav class="navbar navbar-expand-lg" id="barraNav">
+    <div class="container-fluid">
+      <span class="navbar-brand fw-bold fs-4">
+        <i class="bi bi-circle-fill text-warning me-1"></i> Pac-Man
+      </span>
+      <button class="navbar-toggler" type="button"
+        data-bs-toggle="collapse" data-bs-target="#menuNav"
+        aria-controls="menuNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="menuNav">
+        <ul class="navbar-nav ms-auto align-items-center gap-2">
+          <li class="nav-item"><a class="nav-link" href="#seccionJuego">Juego</a></li>
+          <li class="nav-item"><a class="nav-link" href="#seccionPuntajes">Ranking</a></li>
+          <li class="nav-item">
+            <button class="btn btn-outline-secondary btn-sm" id="btnTema">
+              <i class="bi bi-sun-fill"></i> Modo Claro
+            </button>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ══════════════════════════════════════════════════════
+       VISTA CONFIGURACIÓN (pantalla inicial)
+  ══════════════════════════════════════════════════════ -->
+  <div class="container-fluid mt-3 px-3" id="vistaConfig">
+    <div class="row g-3">
+
+      <!-- Panel izquierdo: configuración -->
+      <div class="col-12 col-lg-3">
+
+        <div class="card card-glass mb-3" id="cardConfig">
+          <div class="card-header fw-bold">
+            <i class="bi bi-gear-fill me-2"></i>Configuración
+          </div>
+          <div class="card-body">
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Modo de juego</label>
+              <select class="form-select" id="selectModo">
+                <option value="1jugador">1 Jugador</option>
+                <option value="2jugadores">2 Jugadores</option>
+              </select>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label">Nombre Jugador 1</label>
+              <input type="text" class="form-control" id="inputNombreJ1"
+                placeholder="Jugador 1" maxlength="20" />
+              <div class="text-danger small mt-1 d-none" id="errorNombreJ1">
+                Ingresá un nombre válido.
+              </div>
+            </div>
+
+            <div class="mb-3 d-none" id="contenedorJ2">
+              <label class="form-label">Nombre Jugador 2</label>
+              <input type="text" class="form-control" id="inputNombreJ2"
+                placeholder="Jugador 2" maxlength="20" />
+              <div class="text-danger small mt-1 d-none" id="errorNombreJ2">
+                Ingresá un nombre válido.
+              </div>
+              <small class="text-muted">Jugador 2 usa: W A S D</small>
+            </div>
+
+            <button class="btn btn-pacman w-100 fw-bold" id="btnIniciar">
+              <i class="bi bi-play-fill me-1"></i>Iniciar Juego
+            </button>
+            <button class="btn btn-outline-warning w-100 mt-2 d-none" id="btnPausar">
+              <i class="bi bi-pause-fill me-1"></i>Pausar
+            </button>
+            <button class="btn btn-outline-danger w-100 mt-2 d-none" id="btnReiniciar">
+              <i class="bi bi-arrow-counterclockwise me-1"></i>Reiniciar
+            </button>
+          </div>
+        </div>
+
+        <!-- Controles teclado -->
+        <div class="card card-glass mb-3">
+          <div class="card-header fw-bold">
+            <i class="bi bi-keyboard me-2"></i>Controles
+          </div>
+          <div class="card-body small">
+            <p class="fw-semibold mb-1 text-warning">Jugador 1:</p>
+            <p class="mb-1">↑ ↓ ← → (flechas)</p>
+            <div id="controlesJ2Info" class="d-none">
+              <p class="fw-semibold mb-1 mt-2 text-info">Jugador 2:</p>
+              <p class="mb-0">W (arriba) S (abajo) A (izq) D (der)</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Estado del juego: puntaje + vidas + nivel -->
+        <div class="card card-glass" id="cardEstadoJuego">
+          <div class="card-header fw-bold">
+            <i class="bi bi-heart-fill text-danger me-2"></i>Estado del Juego
+          </div>
+          <div class="card-body">
+            <div class="mb-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <span id="labelJ1" class="fw-semibold">Jugador 1</span>
+                <span class="badge badge-puntaje" id="puntajeJ1">0</span>
+              </div>
+              <div class="d-flex gap-1 mt-1" id="vidasJ1Container"></div>
+            </div>
+            <div class="mb-1 d-none" id="bloqueJ2Estado">
+              <div class="d-flex justify-content-between align-items-center">
+                <span id="labelJ2" class="fw-semibold">Jugador 2</span>
+                <span class="badge badge-puntaje-j2" id="puntajeJ2">0</span>
+              </div>
+              <div class="d-flex gap-1 mt-1" id="vidasJ2Container"></div>
+            </div>
+            <div class="mt-2 nivel-badge-container">
+              <span class="nivel-badge">
+                <i class="bi bi-star-fill me-1"></i>Nivel: <strong id="nivelActual">1</strong>
+              </span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Panel central: canvas -->
+      <div class="col-12 col-lg-6" id="seccionJuego">
+        <div class="card card-glass h-100" id="cardJuego">
+          <div class="card-header fw-bold text-center">
+            <i class="bi bi-joystick me-2"></i>Tablero de Juego
+          </div>
+          <div class="card-body d-flex flex-column align-items-center p-2">
+            <div class="alert alert-info w-100 text-center mb-2" id="mensajeEstado">
+              Configurá los jugadores e iniciá la partida.
+            </div>
+            <!-- Canvas principal (vive aquí al inicio) -->
+            <div id="contenedorCanvasConfig">
+                <canvas
+                    id="canvasPacman"
+                    width="420"
+                    height="441"
+                    class="canvas-config border rounded">
+                </canvas>
+            </div>
+            <div class="alert alert-danger w-100 text-center mt-2 d-none"
+              id="mensajeGameOver"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel derecho: ranking y edición -->
+      <div class="col-12 col-lg-3" id="seccionPuntajes">
+
+        <div class="card card-glass mb-3 d-none" id="cardEditar">
+          <div class="card-header fw-bold">
+            <i class="bi bi-pencil-fill me-2"></i>Editar Jugador
+          </div>
+          <div class="card-body">
+            <input type="hidden" id="editarId" />
+            <div class="mb-2">
+              <label class="form-label">Nombre</label>
+              <input type="text" class="form-control" id="editarNombre" />
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Puntaje</label>
+              <input type="number" class="form-control" id="editarPuntaje" min="0" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Modo</label>
+              <select class="form-select" id="editarModo">
+                <option value="1jugador">1 Jugador</option>
+                <option value="2jugadores">2 Jugadores</option>
+              </select>
+            </div>
+            <button class="btn btn-primary w-100 mb-2" id="btnGuardarEdicion">
+              <i class="bi bi-check-lg me-1"></i>Guardar cambios
+            </button>
+            <button class="btn btn-secondary w-100" id="btnCancelarEdicion">Cancelar</button>
+          </div>
+        </div>
+
+        <div class="card card-glass" id="cardPuntajes">
+          <div class="card-header d-flex justify-content-between align-items-center fw-bold">
+            <span><i class="bi bi-list-ol me-2"></i>Ranking</span>
+            <div class="d-flex gap-2">
+              <button class="btn btn-outline-success btn-sm" id="btnDescargarTxt">
+                <i class="bi bi-download"></i>
+              </button>
+              <span class="badge bg-secondary" id="contadorJugadores">0</span>
+            </div>
+          </div>
+          <div class="card-body p-2">
+            <p class="text-center text-muted small" id="mensajeSinJugadores">
+              Aún no hay puntajes guardados.
+            </p>
+            <ul class="list-group list-group-flush" id="listaJugadores"></ul>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       VISTA JUEGO EXPANDIDO
+  ══════════════════════════════════════════════════════ -->
+  <div id="vistaJuegoExpandido" class="d-none vista-expandida">
+    <div class="container-fluid px-2 px-md-3 mt-2">
+
+      <!-- Barra de estado superior -->
+      <div class="row g-2 mb-2">
+        <div class="col-12">
+          <div class="card card-glass marcador-expandido">
+            <div class="card-body py-2 px-3">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+
+                <!-- Jugador 1 -->
+                <div class="marcador-bloque">
+                  <div class="marcador-avatar marcador-avatar-j1">
+                    <i class="bi bi-circle-fill"></i>
+                  </div>
+                  <div>
+                    <div class="marcador-nombre" id="marcadorNombreJ1">Jugador 1</div>
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="badge badge-puntaje" id="marcadorPuntajeJ1">0</span>
+                      <div class="d-flex gap-1" id="marcadorVidasJ1"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Centro: nivel -->
+                <div class="d-flex gap-3 align-items-center">
+                  <div class="text-center">
+                    <div class="marcador-stat-label">Nivel</div>
+                    <div class="marcador-stat-valor" id="marcadorNivel">1</div>
+                  </div>
+
+                  <!-- Jugador 2 (solo visible en 2 jugadores) -->
+                  <div class="text-center d-none" id="marcadorBloqueJ2">
+                    <div class="marcador-nombre" id="marcadorNombreJ2">Jugador 2</div>
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="badge badge-puntaje-j2" id="marcadorPuntajeJ2">0</span>
+                      <div class="d-flex gap-1" id="marcadorVidasJ2"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Botones -->
+                <div class="d-flex gap-2 flex-wrap">
+                  <button class="btn btn-sm btn-outline-warning d-none" id="btnPausarExpandido">
+                    <i class="bi bi-pause-fill"></i> Pausar
+                  </button>
+                  <button class="btn btn-sm btn-outline-danger d-none" id="btnReiniciarExpandido">
+                    <i class="bi bi-arrow-counterclockwise"></i> Reiniciar
+                  </button>
+                  <button class="btn btn-sm btn-outline-secondary" id="btnVolverConfig">
+                    <i class="bi bi-x-lg"></i> Salir
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Canvas expandido + overlays -->
+      <div class="row g-2 mb-2">
+        <div class="col-12 d-flex justify-content-center">
+          <div class="canvas-wrapper position-relative">
+
+            <div id="contenedorCanvasExpandido"class="d-flex justify-content-center w-100">
+            </div>
+
+            <!-- ── OVERLAY PAUSA ── -->
+            <div id="overlayPausa" class="overlay-juego d-none">
+              <div class="overlay-contenido">
+                <div class="overlay-icono">⏸</div>
+                <h2 class="overlay-titulo">PAUSA</h2>
+                <div class="d-flex flex-column gap-2 w-100 mt-3">
+                  <button class="btn btn-overlay-primary" id="btnContinuarOverlay">
+                    <i class="bi bi-play-fill me-2"></i>Continuar
+                  </button>
+                  <button class="btn btn-overlay-secondary" id="btnReiniciarOverlay">
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>Reiniciar
+                  </button>
+                  <button class="btn btn-overlay-ghost" id="btnMenuOverlay">
+                    <i class="bi bi-house-fill me-2"></i>Menú Principal
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── OVERLAY GAME OVER ── -->
+            <div id="overlayGameOver" class="overlay-juego d-none">
+              <div class="overlay-contenido overlay-gameover">
+                <div class="overlay-icono">💀</div>
+                <h2 class="overlay-titulo overlay-titulo-danger">GAME OVER</h2>
+                <div class="overlay-puntaje-final" id="overlayPuntajeFinal">
+                  Puntaje: 0
+                </div>
+                <div class="overlay-nivel-final" id="overlayNivelFinal">
+                  Nivel alcanzado: 1
+                </div>
+                <div class="d-flex flex-column gap-2 w-100 mt-3">
+                  <button class="btn btn-overlay-primary" id="btnJugarOtraVezOverlay">
+                    <i class="bi bi-play-fill me-2"></i>Jugar Otra Vez
+                  </button>
+                  <button class="btn btn-overlay-ghost" id="btnMenuGameOverOverlay">
+                    <i class="bi bi-house-fill me-2"></i>Volver al Menú
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ── OVERLAY VICTORIA ── -->
+            <div id="overlayVictoria" class="overlay-juego d-none">
+              <div class="overlay-contenido overlay-victoria">
+                <div class="overlay-icono">🏆</div>
+                <h2 class="overlay-titulo overlay-titulo-victory">¡GANASTE!</h2>
+                <div class="overlay-puntaje-final" id="overlayPuntajeVictoria">
+                  Puntaje: 0
+                </div>
+                <div class="overlay-nivel-final" id="overlayNivelVictoria">
+                  Nivel: 1
+                </div>
+                <div class="d-flex flex-column gap-2 w-100 mt-3">
+                  <button class="btn btn-overlay-primary" id="btnJugarOtraVezVictoria">
+                    <i class="bi bi-play-fill me-2"></i>Jugar Otra Vez
+                  </button>
+                  <button class="btn btn-overlay-ghost" id="btnMenuVictoriaOverlay">
+                    <i class="bi bi-house-fill me-2"></i>Volver al Menú
+                  </button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Controles táctiles -->
+      <div class="row g-2 mb-3" id="filaControlesTactiles">
+
+        <!-- Jugador 1 -->
+        <div class="col-6" id="bloqueControlesJ1">
+          <div class="card card-glass controles-card">
+            <div class="card-body p-2 text-center">
+              <div class="controles-titulo mb-2" id="tituloControlesJ1">Jugador 1</div>
+              <div class="pad-direccional">
+                <div class="pad-fila">
+                  <div class="pad-espacio"></div>
+                  <button class="btn-pad btn-pad-j1" id="j1Arriba"
+                    data-jugador="1" data-dir="arriba">
+                    <i class="bi bi-caret-up-fill"></i>
+                  </button>
+                  <div class="pad-espacio"></div>
+                </div>
+                <div class="pad-fila">
+                  <button class="btn-pad btn-pad-j1" id="j1Izquierda"
+                    data-jugador="1" data-dir="izquierda">
+                    <i class="bi bi-caret-left-fill"></i>
+                  </button>
+                  <div class="pad-centro pad-centro-j1">●</div>
+                  <button class="btn-pad btn-pad-j1" id="j1Derecha"
+                    data-jugador="1" data-dir="derecha">
+                    <i class="bi bi-caret-right-fill"></i>
+                  </button>
+                </div>
+                <div class="pad-fila">
+                  <div class="pad-espacio"></div>
+                  <button class="btn-pad btn-pad-j1" id="j1Abajo"
+                    data-jugador="1" data-dir="abajo">
+                    <i class="bi bi-caret-down-fill"></i>
+                  </button>
+                  <div class="pad-espacio"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Jugador 2 (oculto por defecto) -->
+        <div class="col-6 d-none" id="bloqueControlesJ2">
+          <div class="card card-glass controles-card">
+            <div class="card-body p-2 text-center">
+              <div class="controles-titulo mb-2 controles-titulo-j2" id="tituloControlesJ2">Jugador 2</div>
+              <div class="pad-direccional">
+                <div class="pad-fila">
+                  <div class="pad-espacio"></div>
+                  <button class="btn-pad btn-pad-j2" id="j2Arriba"
+                    data-jugador="2" data-dir="arriba">
+                    <i class="bi bi-caret-up-fill"></i>
+                  </button>
+                  <div class="pad-espacio"></div>
+                </div>
+                <div class="pad-fila">
+                  <button class="btn-pad btn-pad-j2" id="j2Izquierda"
+                    data-jugador="2" data-dir="izquierda">
+                    <i class="bi bi-caret-left-fill"></i>
+                  </button>
+                  <div class="pad-centro pad-centro-j2">●</div>
+                  <button class="btn-pad btn-pad-j2" id="j2Derecha"
+                    data-jugador="2" data-dir="derecha">
+                    <i class="bi bi-caret-right-fill"></i>
+                  </button>
+                </div>
+                <div class="pad-fila">
+                  <div class="pad-espacio"></div>
+                  <button class="btn-pad btn-pad-j2" id="j2Abajo"
+                    data-jugador="2" data-dir="abajo">
+                    <i class="bi bi-caret-down-fill"></i>
+                  </button>
+                  <div class="pad-espacio"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+  <!-- fin vistaJuegoExpandido -->
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script type="module" src="../modules/main.js"></script>
+</body>
+</html>

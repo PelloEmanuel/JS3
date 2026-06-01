@@ -1,0 +1,5067 @@
+﻿
+===== proyecto1\modules\dom.js =====
+/**
+ * dom.js â€” Proyecto Snake
+ * MÃ³dulo de funciones reutilizables para manipulaciÃ³n del DOM.
+ * No contiene lÃ³gica de negocio ni eventos directos.
+ */
+
+/**
+ * Muestra u oculta un elemento del DOM.
+ * @param {string} id - ID del elemento
+ * @param {boolean} visible - true para mostrar, false para ocultar
+ */
+export function mostrarElemento(id, visible) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (visible) {
+    el.classList.remove("d-none");
+  } else {
+    el.classList.add("d-none");
+  }
+}
+
+/**
+ * Establece el texto de un elemento del DOM.
+ * @param {string} id - ID del elemento
+ * @param {string} texto - Texto a mostrar
+ */
+export function establecerTexto(id, texto) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = texto;
+}
+
+/**
+ * Establece el valor de un input por su ID.
+ * @param {string} id
+ * @param {string|number} valor
+ */
+export function establecerValor(id, valor) {
+  const el = document.getElementById(id);
+  if (el) el.value = valor;
+}
+
+/**
+ * Obtiene el valor limpio (sin espacios) de un input.
+ * @param {string} id - ID del input
+ * @returns {string}
+ */
+export function obtenerValor(id) {
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : "";
+}
+
+/**
+ * Muestra u oculta un mensaje de error debajo de un input.
+ * @param {string} idError - ID del div de error
+ * @param {boolean} mostrar
+ */
+export function toggleError(idError, mostrar) {
+  const el = document.getElementById(idError);
+  if (!el) return;
+  if (mostrar) {
+    el.classList.remove("d-none");
+  } else {
+    el.classList.add("d-none");
+  }
+}
+
+/**
+ * Actualiza el texto del mensaje de estado del juego.
+ * @param {string} mensaje
+ * @param {string} tipo - Clase Bootstrap: 'info', 'warning', 'danger', 'success'
+ */
+export function actualizarMensajeEstado(mensaje, tipo = "info") {
+  const el = document.getElementById("mensajeEstado");
+  if (!el) return;
+  el.className = `alert alert-${tipo} w-100 text-center mb-2`;
+  el.textContent = mensaje;
+}
+
+/**
+ * Renderiza la lista de jugadores en el DOM.
+ * Crea elementos li con botones de editar y eliminar para cada jugador.
+ * @param {Array} jugadores - Lista de objetos jugador
+ * @param {Function} onEditar - Callback al hacer clic en editar
+ * @param {Function} onEliminar - Callback al hacer clic en eliminar
+ */
+export function renderizarListaJugadores(jugadores, onEditar, onEliminar) {
+  const lista = document.getElementById("listaJugadores");
+  const sinJugadores = document.getElementById("mensajeSinJugadores");
+  const contador = document.getElementById("contadorJugadores");
+
+  if (!lista) return;
+
+  /* Limpiar lista actual */
+  lista.innerHTML = "";
+
+  /* Actualizar contador */
+  if (contador) contador.textContent = jugadores.length;
+
+  /* Mostrar mensaje si no hay jugadores */
+  if (jugadores.length === 0) {
+    if (sinJugadores) sinJugadores.classList.remove("d-none");
+    return;
+  }
+
+  if (sinJugadores) sinJugadores.classList.add("d-none");
+
+  /* Ordenar por puntaje descendente */
+  const ordenados = [...jugadores].sort((a, b) => b.puntaje - a.puntaje);
+
+  ordenados.forEach((jugador, indice) => {
+    const li = document.createElement("li");
+    li.className =
+      "list-group-item d-flex justify-content-between align-items-start py-2 px-2";
+    li.dataset.id = jugador.id;
+
+    li.innerHTML = `
+      <div>
+        <span class="fw-semibold">${indice + 1}. ${jugador.nombre}</span>
+        <br/>
+        <small class="text-muted">
+          Puntaje: <strong>${jugador.puntaje}</strong> |
+          Modo: ${jugador.modo} | ${jugador.fecha}
+        </small>
+      </div>
+      <div class="d-flex gap-1 ms-2">
+        <button class="btn btn-outline-primary btn-sm btnEditar" data-id="${jugador.id}">
+          <i class="bi bi-pencil"></i>
+        </button>
+        <button class="btn btn-outline-danger btn-sm btnEliminar" data-id="${jugador.id}">
+          <i class="bi bi-trash"></i>
+        </button>
+      </div>
+    `;
+
+    /* Eventos de editar y eliminar sobre cada Ã­tem */
+    li.querySelector(".btnEditar").addEventListener("click", () => {
+      onEditar(jugador);
+    });
+    li.querySelector(".btnEliminar").addEventListener("click", () => {
+      onEliminar(jugador.id);
+    });
+
+    lista.appendChild(li);
+  });
+}
+
+/**
+ * Descarga un contenido como archivo .txt en el navegador del usuario.
+ * Usa Blob + URL.createObjectURL() + elemento <a> dinÃ¡mico.
+ * @param {string} contenido - Texto a guardar en el archivo
+ * @param {string} nombreArchivo - Nombre sugerido para el archivo
+ */
+export function descargarTxt(contenido, nombreArchivo) {
+  const blob = new Blob([contenido], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement("a");
+  enlace.href = url;
+  enlace.download = nombreArchivo;
+  document.body.appendChild(enlace);
+  enlace.click();
+  document.body.removeChild(enlace);
+  URL.revokeObjectURL(url);
+}
+
+===== proyecto1\modules\juego.js =====
+/**
+ * juego.js â€” Proyecto Snake
+ * LÃ³gica completa del juego Snake con sistema de niveles y velocidad progresiva.
+ */
+
+/** TamaÃ±o de cada celda en pÃ­xeles */
+const TAMANO_CELDA = 20;
+
+/** Cantidad de celdas en cada dimensiÃ³n */
+const CELDAS = 20;
+
+/**
+ * ConfiguraciÃ³n de niveles.
+ * Nivel 7 es infinito: velocidad fija en 5, nunca cambia.
+ */
+const CONFIG_NIVELES = [
+  { nivel: 1, puntajeMin: 0,    puntajeMax: 49,  velocidad: 1 },
+  { nivel: 2, puntajeMin: 50,  puntajeMax: 99,  velocidad: 2 },
+  { nivel: 3, puntajeMin: 100,  puntajeMax: 149,  velocidad: 3 },
+  { nivel: 4, puntajeMin: 150,  puntajeMax: 199,  velocidad: 4 },
+  { nivel: 5, puntajeMin: 200,  puntajeMax: 249,  velocidad: 5 },
+  { nivel: 6, puntajeMin: 250, puntajeMax: 349, velocidad: 6 },
+  { nivel: 7, puntajeMin: 350, puntajeMax: Infinity, velocidad: 5 }
+];
+
+/**
+ * Determina el nivel correspondiente a un puntaje dado.
+ * @param {number} puntaje
+ * @returns {{ nivel: number, velocidad: number }}
+ */
+function obtenerNivelPorPuntaje(puntaje) {
+  for (let i = CONFIG_NIVELES.length - 1; i >= 0; i--) {
+    if (puntaje >= CONFIG_NIVELES[i].puntajeMin) {
+      return {
+        nivel: CONFIG_NIVELES[i].nivel,
+        velocidad: CONFIG_NIVELES[i].velocidad
+      };
+    }
+  }
+  return { nivel: 1, velocidad: 1 };
+}
+
+/**
+ * Convierte el nivel de velocidad al intervalo en ms del setInterval.
+ * Mayor nivel â†’ intervalo menor â†’ mÃ¡s rÃ¡pido.
+ * Nivel 1 â†’ 200ms, Nivel 6 â†’ 100ms, Nivel 7 â†’ 120ms (velocidad 5)
+ * @param {number} velocidadNivel - 1 a 6
+ * @returns {number} milisegundos
+ */
+function velocidadAIntervalo(velocidadNivel) {
+  return Math.max(80, 220 - velocidadNivel * 20);
+}
+
+/**
+ * Crea el estado inicial de una serpiente.
+ */
+function crearSerpiente(xInicio, yInicio, color, colorBorde) {
+  return {
+    cuerpo: [
+      { x: xInicio,     y: yInicio },
+      { x: xInicio - 1, y: yInicio },
+      { x: xInicio - 2, y: yInicio }
+    ],
+    direccion:        { x: 1, y: 0 },
+    proximaDireccion: { x: 1, y: 0 },
+    color,
+    colorBorde,
+    viva:    true,
+    puntaje: 0
+  };
+}
+
+/**
+ * Genera una posiciÃ³n aleatoria para la comida,
+ * evitando las posiciones ocupadas por las serpientes.
+ */
+function generarComida(serpientes) {
+  let posicion;
+  let ocupada = true;
+  while (ocupada) {
+    posicion = {
+      x: Math.floor(Math.random() * CELDAS),
+      y: Math.floor(Math.random() * CELDAS)
+    };
+    ocupada = serpientes.some((s) =>
+      s.cuerpo.some((seg) => seg.x === posicion.x && seg.y === posicion.y)
+    );
+  }
+  return posicion;
+}
+
+/**
+ * Clase principal que encapsula el juego Snake.
+ * Ahora incluye sistema de niveles progresivos con velocidad automÃ¡tica.
+ */
+export class JuegoSnake {
+  /**
+   * @param {HTMLCanvasElement} canvas
+   * @param {Object} config
+   * @param {string}   config.modo         - '1jugador' | '2jugadores'
+   * @param {Function} config.onPuntaje    - (p1, p2, nivel, velocidad)
+   * @param {Function} config.onFinJuego   - (p1, p2, nivel)
+   * @param {Function} config.onCambioNivel - (nuevoNivel) â€” para notificaciÃ³n visual
+   */
+  constructor(canvas, config) {
+    this.canvas  = canvas;
+    this.ctx     = canvas.getContext('2d');
+    this.config  = config;
+    this.intervalo = null;
+    this.pausado   = false;
+
+    /** Nivel actual de juego (1-7) */
+    this.nivelActual = 1;
+
+    /** Velocidad actual (1-6, nivel 7 usa velocidad 5) */
+    this.velocidadActual = 1;
+
+    /** Intervalo en ms del bucle (calculado desde velocidadActual) */
+    this.intervaloMs = velocidadAIntervalo(1);
+
+    /* Serpientes */
+    this.serpiente1 = crearSerpiente(10, 10, '#00ff88', '#00cc66');
+    this.serpiente2 = config.modo === '2jugadores'
+      ? crearSerpiente(5, 5, '#4488ff', '#2266cc')
+      : null;
+
+    const serpientes = this.serpiente2
+      ? [this.serpiente1, this.serpiente2]
+      : [this.serpiente1];
+
+    this.comida = generarComida(serpientes);
+  }
+
+  /**
+   * Establece la velocidad inicial desde el selector de velocidad del formulario.
+   * Solo se aplica si el nivel calculado por puntaje no lo supera.
+   * @param {number} nivel - 1 a 10 (valor del range)
+   */
+  establecerVelocidad(nivel) {
+    /* Usamos el valor del range como velocidad inicial base,
+       pero lo limitamos al rango 1-6 para compatibilidad con el sistema */
+    const velBase = Math.min(6, Math.max(1, nivel));
+    this.velocidadActual = velBase;
+    this.intervaloMs     = velocidadAIntervalo(velBase);
+  }
+
+  /**
+   * Verifica si el puntaje actual requiere cambio de nivel.
+   * Si cambia, reinicia el intervalo con la nueva velocidad.
+   * @param {number} puntajeJ1
+   * @param {number} puntajeJ2
+   */
+  _actualizarNivel(puntajeJ1, puntajeJ2) {
+    /* En modo 2 jugadores, el nivel se calcula con el puntaje mayor */
+    const puntajeReferencia = Math.max(puntajeJ1, puntajeJ2);
+    const { nivel, velocidad } = obtenerNivelPorPuntaje(puntajeReferencia);
+
+    if (nivel !== this.nivelActual) {
+      const nivelAnterior = this.nivelActual;
+      this.nivelActual     = nivel;
+      this.velocidadActual = velocidad;
+      this.intervaloMs     = velocidadAIntervalo(velocidad);
+
+      /* Reiniciar el intervalo con la nueva velocidad */
+      if (this.intervalo) {
+        clearInterval(this.intervalo);
+        this.intervalo = setInterval(() => this.actualizar(), this.intervaloMs);
+      }
+
+      /* Notificar cambio de nivel al exterior */
+      if (this.config.onCambioNivel) {
+        this.config.onCambioNivel(nivel, nivelAnterior);
+      }
+    }
+  }
+
+  /**
+   * Inicia el bucle principal del juego.
+   */
+  iniciar() {
+    if (this.intervalo) clearInterval(this.intervalo);
+    this.intervalo = setInterval(() => this.actualizar(), this.intervaloMs);
+  }
+
+  /**
+   * Alterna entre pausado y activo.
+   * @returns {boolean} true si quedÃ³ pausado
+   */
+  togglePausa() {
+    if (this.pausado) {
+      this.intervalo = setInterval(() => this.actualizar(), this.intervaloMs);
+      this.pausado = false;
+    } else {
+      clearInterval(this.intervalo);
+      this.pausado = true;
+    }
+    return this.pausado;
+  }
+
+  /**
+   * Detiene el juego limpiando el intervalo.
+   */
+  detener() {
+    if (this.intervalo) clearInterval(this.intervalo);
+  }
+
+  /**
+   * Cambia la direcciÃ³n de la serpiente 1.
+   * Impide el giro de 180 grados.
+   */
+  cambiarDireccionJ1(nuevaDireccion) {
+    const dir = this.serpiente1.direccion;
+    if (nuevaDireccion.x !== -dir.x || nuevaDireccion.y !== -dir.y) {
+      this.serpiente1.proximaDireccion = nuevaDireccion;
+    }
+  }
+
+  /**
+   * Cambia la direcciÃ³n de la serpiente 2.
+   */
+  cambiarDireccionJ2(nuevaDireccion) {
+    if (!this.serpiente2) return;
+    const dir = this.serpiente2.direccion;
+    if (nuevaDireccion.x !== -dir.x || nuevaDireccion.y !== -dir.y) {
+      this.serpiente2.proximaDireccion = nuevaDireccion;
+    }
+  }
+
+  /**
+   * Mueve una serpiente en su direcciÃ³n actual.
+   */
+  moverSerpiente(serpiente, todasSerpientes) {
+    if (!serpiente.viva) return;
+
+    serpiente.direccion = { ...serpiente.proximaDireccion };
+
+    const cabeza = serpiente.cuerpo[0];
+    const nuevaCabeza = {
+      x: cabeza.x + serpiente.direccion.x,
+      y: cabeza.y + serpiente.direccion.y
+    };
+
+    /* ColisiÃ³n con paredes */
+    if (
+      nuevaCabeza.x < 0 || nuevaCabeza.x >= CELDAS ||
+      nuevaCabeza.y < 0 || nuevaCabeza.y >= CELDAS
+    ) {
+      serpiente.viva = false;
+      return;
+    }
+
+    /* ColisiÃ³n con cualquier cuerpo */
+    for (const s of todasSerpientes) {
+      for (const seg of s.cuerpo) {
+        if (nuevaCabeza.x === seg.x && nuevaCabeza.y === seg.y) {
+          serpiente.viva = false;
+          return;
+        }
+      }
+    }
+
+    serpiente.cuerpo.unshift(nuevaCabeza);
+
+    /* Verificar si comiÃ³ la comida */
+    if (nuevaCabeza.x === this.comida.x && nuevaCabeza.y === this.comida.y) {
+      serpiente.puntaje += 10;
+
+      const serpientes = this.serpiente2
+        ? [this.serpiente1, this.serpiente2]
+        : [this.serpiente1];
+      this.comida = generarComida(serpientes);
+
+      /* Notificar cambio de puntaje con nivel y velocidad */
+      this.config.onPuntaje(
+        this.serpiente1.puntaje,
+        this.serpiente2 ? this.serpiente2.puntaje : 0,
+        this.nivelActual,
+        this.velocidadActual
+      );
+
+      /* Verificar si corresponde cambiar de nivel */
+      this._actualizarNivel(
+        this.serpiente1.puntaje,
+        this.serpiente2 ? this.serpiente2.puntaje : 0
+      );
+    } else {
+      serpiente.cuerpo.pop();
+    }
+  }
+
+  /**
+   * Ciclo principal de actualizaciÃ³n.
+   */
+  actualizar() {
+    const serpientes = this.serpiente2
+      ? [this.serpiente1, this.serpiente2]
+      : [this.serpiente1];
+
+    for (const s of serpientes) {
+      this.moverSerpiente(s, serpientes);
+    }
+
+    const juegoTerminado = serpientes.some((s) => !s.viva);
+    if (juegoTerminado) {
+      this.detener();
+      this.config.onFinJuego(
+        this.serpiente1.puntaje,
+        this.serpiente2 ? this.serpiente2.puntaje : 0,
+        this.nivelActual
+      );
+    }
+
+    this.renderizar();
+  }
+
+  /**
+   * Renderiza el estado actual del juego en el canvas.
+   */
+  renderizar() {
+    const ctx  = this.ctx;
+    const ancho = this.canvas.width;
+    const alto  = this.canvas.height;
+
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, ancho, alto);
+
+    /* Grilla sutil */
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.lineWidth   = 0.5;
+    for (let i = 0; i <= CELDAS; i++) {
+      ctx.beginPath(); ctx.moveTo(i * TAMANO_CELDA, 0); ctx.lineTo(i * TAMANO_CELDA, alto); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i * TAMANO_CELDA); ctx.lineTo(ancho, i * TAMANO_CELDA); ctx.stroke();
+    }
+
+    /* Comida */
+    ctx.fillStyle  = '#ff4466';
+    ctx.shadowColor = '#ff4466';
+    ctx.shadowBlur  = 10;
+    ctx.beginPath();
+    ctx.arc(
+      this.comida.x * TAMANO_CELDA + TAMANO_CELDA / 2,
+      this.comida.y * TAMANO_CELDA + TAMANO_CELDA / 2,
+      TAMANO_CELDA / 2 - 2, 0, Math.PI * 2
+    );
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    /* Serpientes */
+    const serpientes = this.serpiente2
+      ? [this.serpiente1, this.serpiente2]
+      : [this.serpiente1];
+
+    for (const s of serpientes) {
+      if (!s.viva) continue;
+      s.cuerpo.forEach((seg, idx) => {
+        ctx.fillStyle   = idx === 0 ? s.color : s.color + 'bb';
+        ctx.strokeStyle = s.colorBorde;
+        ctx.lineWidth   = 1;
+        ctx.fillRect(
+          seg.x * TAMANO_CELDA + 1, seg.y * TAMANO_CELDA + 1,
+          TAMANO_CELDA - 2, TAMANO_CELDA - 2
+        );
+        ctx.strokeRect(
+          seg.x * TAMANO_CELDA + 1, seg.y * TAMANO_CELDA + 1,
+          TAMANO_CELDA - 2, TAMANO_CELDA - 2
+        );
+      });
+    }
+  }
+}
+
+===== proyecto1\modules\main.js =====
+/**
+ * main.js â€” Proyecto Snake
+ * MÃ³dulo principal. Conecta DOM, lÃ³gica del juego, controles tÃ¡ctiles
+ * y sistema de niveles progresivos.
+ */
+
+import {
+  mostrarElemento,
+  establecerTexto,
+  obtenerValor,
+  establecerValor,
+  toggleError,
+  actualizarMensajeEstado,
+  renderizarListaJugadores,
+  descargarTxt
+} from "./dom.js";
+
+import { JuegoSnake } from "./juego.js";
+
+/** Instancia activa del juego */
+let juegoActual = null;
+
+/** Modo de juego actual */
+let modoActual = "1jugador";
+
+/** Indica si hay una partida en curso */
+let partidaActiva = false;
+
+/* ============================================================
+   FUNCIONES DE API (CRUD)
+   ============================================================ */
+
+async function obtenerJugadores() {
+  try {
+    const r = await fetch("/api/jugadores");
+    return await r.json();
+  } catch { return []; }
+}
+
+async function guardarJugador(jugador) {
+  try {
+    const r = await fetch("/api/jugadores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(jugador)
+    });
+    return await r.json();
+  } catch { return null; }
+}
+
+async function modificarJugador(id, datos) {
+  try {
+    const r = await fetch(`/api/jugadores/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(datos)
+    });
+    return await r.json();
+  } catch { return null; }
+}
+
+async function eliminarJugador(id) {
+  try {
+    const r = await fetch(`/api/jugadores/${id}`, { method: "DELETE" });
+    const d = await r.json();
+    return !!d.mensaje;
+  } catch { return false; }
+}
+
+/* ============================================================
+   FUNCIONES DE INTERFAZ
+   ============================================================ */
+
+async function cargarYRenderizarJugadores() {
+  const jugadores = await obtenerJugadores();
+  renderizarListaJugadores(jugadores, abrirEdicion, manejarEliminar);
+}
+
+function abrirEdicion(jugador) {
+  establecerValor("editarId", jugador.id);
+  establecerValor("editarNombre", jugador.nombre);
+  establecerValor("editarPuntaje", jugador.puntaje);
+  establecerValor("editarModo", jugador.modo);
+  mostrarElemento("cardEditar", true);
+  document.getElementById("cardEditar").scrollIntoView({ behavior: "smooth" });
+}
+
+async function manejarEliminar(id) {
+  const exito = await eliminarJugador(id);
+  if (exito) {
+    actualizarMensajeEstado("Jugador eliminado correctamente.", "warning");
+    await cargarYRenderizarJugadores();
+  }
+}
+
+function validarNombre(valor) {
+  return valor.length > 0 && valor.length <= 20;
+}
+
+/* ============================================================
+   MODO CLARO / OSCURO
+   ============================================================ */
+
+function toggleTema() {
+  const html  = document.documentElement;
+  const nuevo = html.getAttribute("data-tema") === "oscuro" ? "claro" : "oscuro";
+  html.setAttribute("data-tema", nuevo);
+  const btn = document.getElementById("btnTema");
+  btn.innerHTML = nuevo === "oscuro"
+    ? '<i class="bi bi-sun-fill"></i> Modo Claro'
+    : '<i class="bi bi-moon-fill"></i> Modo Oscuro';
+}
+
+/* ============================================================
+   NOTIFICACIÃ“N VISUAL DE CAMBIO DE NIVEL
+   ============================================================ */
+
+function mostrarNotificacionNivel(nivel) {
+  const notif = document.getElementById("notificacionNivel");
+  if (!notif) return;
+
+  const esInfinito = nivel === 7;
+  notif.textContent = esInfinito ? "Â¡Nivel 7 - Modo Infinito!" : `Â¡Nivel ${nivel}!`;
+  notif.classList.remove("d-none", "notificacion-saliendo");
+  notif.classList.add("notificacion-entrando");
+
+  setTimeout(() => notif.classList.remove("notificacion-entrando"), 400);
+
+  setTimeout(() => {
+    notif.classList.add("notificacion-saliendo");
+    setTimeout(() => {
+      notif.classList.add("d-none");
+      notif.classList.remove("notificacion-saliendo");
+    }, 400);
+  }, 2000);
+}
+
+/* ============================================================
+   ACTUALIZAR MARCADOR EXPANDIDO
+   ============================================================ */
+
+function actualizarMarcadorExpandido(p1, p2, nivel, velocidad) {
+  establecerTexto("marcadorPuntajeJ1", p1);
+  establecerTexto("marcadorNivel", nivel);
+  establecerTexto("marcadorVelocidad", velocidad);
+  if (modoActual === "2jugadores") {
+    establecerTexto("marcadorPuntajeJ2", p2);
+  }
+}
+
+/* ============================================================
+   GESTIÃ“N DE VISTAS
+   Mueve fÃ­sicamente el nodo <canvas> entre contenedores
+   para que siempre sea visible donde corresponde.
+   ============================================================ */
+
+/**
+ * Mueve el canvas al contenedor de la vista expandida y activa esa vista.
+ */
+function activarVistaExpandida() {
+  const canvas        = document.getElementById("canvasJuego");
+  const contenedorExp = document.getElementById("contenedorCanvasExpandido");
+  const contenedorCfg = document.getElementById("contenedorCanvasConfig");
+
+  /* Mover fÃ­sicamente el canvas al contenedor expandido */
+  if (canvas && contenedorExp) {
+    contenedorExp.appendChild(canvas);
+    canvas.classList.remove("d-none");
+    canvas.classList.add("canvas-expandido");
+    canvas.classList.remove("canvas-config");
+  }
+
+  /* Mostrar vista expandida, ocultar config */
+  document.getElementById("vistaConfig").classList.add("d-none");
+  document.getElementById("vistaJuegoExpandido").classList.remove("d-none");
+
+  /* Botones de control */
+  mostrarElemento("btnPausarExpandido", true);
+  mostrarElemento("btnReiniciarExpandido", true);
+
+  /* Controles tÃ¡ctiles segÃºn modo */
+  mostrarElemento("bloqueControlesJ2", modoActual === "2jugadores");
+
+  /* Marcador J2 */
+  const bloqueJ2 = document.getElementById("marcadorBloqueJ2Puntaje");
+  if (bloqueJ2) {
+    bloqueJ2.classList.toggle("d-none", modoActual !== "2jugadores");
+  }
+
+  /* Ocultar game over expandido */
+  mostrarElemento("filaGameOverExpandido", false);
+}
+
+/**
+ * Devuelve el canvas al contenedor de la vista config y activa esa vista.
+ */
+function volverAConfig() {
+  const canvas        = document.getElementById("canvasJuego");
+  const contenedorCfg = document.getElementById("contenedorCanvasConfig");
+
+  /* Mover fÃ­sicamente el canvas de vuelta a la vista config */
+  if (canvas && contenedorCfg) {
+    contenedorCfg.appendChild(canvas);
+    canvas.classList.remove("canvas-expandido");
+    canvas.classList.add("canvas-config");
+  }
+
+  if (juegoActual) {
+    juegoActual.detener();
+    juegoActual = null;
+  }
+  partidaActiva = false;
+
+  /* Mostrar config, ocultar expandida */
+  document.getElementById("vistaJuegoExpandido").classList.add("d-none");
+  document.getElementById("vistaConfig").classList.remove("d-none");
+
+  /* Resetear UI */
+  establecerTexto("puntajeJ1", "0");
+  establecerTexto("puntajeJ2", "0");
+  mostrarElemento("mensajeGameOver", false);
+  mostrarElemento("btnIniciar", true);
+  mostrarElemento("btnPausar", false);
+  mostrarElemento("btnReiniciar", false);
+  actualizarMensajeEstado("ConfigurÃ¡ los jugadores e iniciÃ¡ la partida.", "info");
+}
+
+/* ============================================================
+   CONTROLES TÃCTILES
+   ============================================================ */
+
+const MAPA_DIR_J1 = {
+  arriba:    { x: 0,  y: -1 },
+  abajo:     { x: 0,  y:  1 },
+  izquierda: { x: -1, y:  0 },
+  derecha:   { x: 1,  y:  0 }
+};
+
+const MAPA_DIR_J2 = {
+  arriba:    { x: 0,  y: -1 },
+  abajo:     { x: 0,  y:  1 },
+  izquierda: { x: -1, y:  0 },
+  derecha:   { x: 1,  y:  0 }
+};
+
+function registrarBotonTactil(idBoton, jugador, dir) {
+  const btn = document.getElementById(idBoton);
+  if (!btn) return;
+
+  const manejarPresion = (e) => {
+    e.preventDefault();
+    if (!juegoActual || !partidaActiva) return;
+
+    if (jugador === 1) {
+      const direccion = MAPA_DIR_J1[dir];
+      if (direccion) juegoActual.cambiarDireccionJ1(direccion);
+    } else if (jugador === 2) {
+      const direccion = MAPA_DIR_J2[dir];
+      if (direccion) juegoActual.cambiarDireccionJ2(direccion);
+    }
+  };
+
+  btn.addEventListener("mousedown", manejarPresion);
+  btn.addEventListener("touchstart", manejarPresion, { passive: false });
+}
+
+function inicializarControlesTactiles() {
+  registrarBotonTactil("j1Arriba",    1, "arriba");
+  registrarBotonTactil("j1Abajo",     1, "abajo");
+  registrarBotonTactil("j1Izquierda", 1, "izquierda");
+  registrarBotonTactil("j1Derecha",   1, "derecha");
+
+  registrarBotonTactil("j2Arriba",    2, "arriba");
+  registrarBotonTactil("j2Abajo",     2, "abajo");
+  registrarBotonTactil("j2Izquierda", 2, "izquierda");
+  registrarBotonTactil("j2Derecha",   2, "derecha");
+}
+
+/* ============================================================
+   INICIALIZACIÃ“N DE EVENTOS
+   ============================================================ */
+
+function inicializarEventos() {
+
+  /* â”€â”€ Selector de modo â”€â”€ */
+  document.getElementById("selectModo").addEventListener("change", (e) => {
+    modoActual = e.target.value;
+    const es2J = modoActual === "2jugadores";
+    mostrarElemento("contenedorJ2", es2J);
+    mostrarElemento("controlesJ2Info", es2J);
+    mostrarElemento("filaPuntajeJ2", es2J);
+  });
+
+  /* â”€â”€ Velocidad en tiempo real â”€â”€ */
+  document.getElementById("rangeVelocidad").addEventListener("input", (e) => {
+    establecerTexto("labelVelocidad", e.target.value);
+  });
+
+  /* â”€â”€ ValidaciÃ³n blur J1 â”€â”€ */
+  document.getElementById("inputNombreJ1").addEventListener("blur", (e) => {
+    toggleError("errorNombreJ1", !validarNombre(e.target.value.trim()));
+  });
+
+  /* â”€â”€ ValidaciÃ³n blur J2 â”€â”€ */
+  document.getElementById("inputNombreJ2").addEventListener("blur", (e) => {
+    if (modoActual !== "2jugadores") return;
+    toggleError("errorNombreJ2", !validarNombre(e.target.value.trim()));
+  });
+
+  /* â”€â”€ INICIAR JUEGO â”€â”€ */
+  document.getElementById("btnIniciar").addEventListener("click", () => {
+    const nombreJ1 = obtenerValor("inputNombreJ1");
+
+    if (!validarNombre(nombreJ1)) {
+      toggleError("errorNombreJ1", true);
+      actualizarMensajeEstado("IngresÃ¡ un nombre vÃ¡lido para el Jugador 1.", "danger");
+      return;
+    }
+    toggleError("errorNombreJ1", false);
+
+    if (modoActual === "2jugadores") {
+      const nombreJ2 = obtenerValor("inputNombreJ2");
+      if (!validarNombre(nombreJ2)) {
+        toggleError("errorNombreJ2", true);
+        actualizarMensajeEstado("IngresÃ¡ un nombre vÃ¡lido para el Jugador 2.", "danger");
+        return;
+      }
+      toggleError("errorNombreJ2", false);
+    }
+
+    if (juegoActual) juegoActual.detener();
+
+    /* El canvas ya estÃ¡ en contenedorCanvasConfig; lo usamos directamente */
+    const canvas = document.getElementById("canvasJuego");
+
+    const nombreJ1Real = obtenerValor("inputNombreJ1") || "Jugador 1";
+    const nombreJ2Real = modoActual === "2jugadores"
+      ? (obtenerValor("inputNombreJ2") || "Jugador 2")
+      : "Jugador 2";
+
+    establecerTexto("marcadorNombreJ1", nombreJ1Real);
+    establecerTexto("marcadorNombreJ2", nombreJ2Real);
+    establecerTexto("tituloControlesJ1", nombreJ1Real);
+    establecerTexto("tituloControlesJ2", nombreJ2Real);
+
+    juegoActual = new JuegoSnake(canvas, {
+      modo: modoActual,
+
+      onPuntaje: (p1, p2, nivel, velocidadNivel) => {
+        establecerTexto("puntajeJ1", p1);
+        if (modoActual === "2jugadores") establecerTexto("puntajeJ2", p2);
+        actualizarMarcadorExpandido(p1, p2, nivel, velocidadNivel);
+      },
+
+      onCambioNivel: (nuevoNivel) => {
+        mostrarNotificacionNivel(nuevoNivel);
+      },
+
+      onFinJuego: async (p1, p2, nivel) => {
+        const nJ1 = obtenerValor("inputNombreJ1");
+        await guardarJugador({ nombre: nJ1, puntaje: p1, modo: modoActual, nivel });
+
+        if (modoActual === "2jugadores") {
+          const nJ2 = obtenerValor("inputNombreJ2");
+          await guardarJugador({ nombre: nJ2, puntaje: p2, modo: modoActual, nivel });
+        }
+
+        const msgExp = document.getElementById("mensajeGameOverExpandido");
+        if (msgExp) {
+          if (modoActual === "2jugadores") {
+            const nJ2 = obtenerValor("inputNombreJ2");
+            const ganador = p1 > p2 ? nJ1 : p2 > p1 ? nJ2 : "Empate";
+            msgExp.textContent = ganador === "Empate"
+              ? `Â¡Empate! Nivel alcanzado: ${nivel}`
+              : `Â¡GanÃ³ ${ganador} con ${Math.max(p1, p2)} pts! Nivel: ${nivel}`;
+          } else {
+            msgExp.textContent = `Â¡Juego terminado! Puntaje: ${p1} | Nivel: ${nivel}`;
+          }
+        }
+        mostrarElemento("filaGameOverExpandido", true);
+
+        mostrarElemento("mensajeGameOver", true);
+        mostrarElemento("btnIniciar", true);
+        mostrarElemento("btnPausar", false);
+        mostrarElemento("btnReiniciar", true);
+        mostrarElemento("btnPausarExpandido", false);
+        partidaActiva = false;
+
+        await cargarYRenderizarJugadores();
+      }
+    });
+
+    juegoActual.establecerVelocidad(parseInt(obtenerValor("rangeVelocidad"), 10));
+    juegoActual.iniciar();
+    partidaActiva = true;
+
+    establecerTexto("labelJ1Puntaje", nombreJ1Real);
+    if (modoActual === "2jugadores") establecerTexto("labelJ2Puntaje", nombreJ2Real);
+    establecerTexto("puntajeJ1", "0");
+    establecerTexto("puntajeJ2", "0");
+    mostrarElemento("mensajeGameOver", false);
+    mostrarElemento("btnIniciar", false);
+    mostrarElemento("btnPausar", true);
+    mostrarElemento("btnReiniciar", true);
+
+    actualizarMarcadorExpandido(0, 0, 1, juegoActual.velocidadActual);
+
+    /* Activar vista expandida: MUEVE el canvas fÃ­sicamente */
+    activarVistaExpandida();
+  });
+
+  /* â”€â”€ PAUSAR / REANUDAR â”€â”€ */
+  const manejarPausa = () => {
+    if (!juegoActual) return;
+    const pausado = juegoActual.togglePausa();
+    const btnP  = document.getElementById("btnPausar");
+    const btnPE = document.getElementById("btnPausarExpandido");
+    if (pausado) {
+      if (btnP)  btnP.innerHTML  = '<i class="bi bi-play-fill"></i> Reanudar';
+      if (btnPE) btnPE.innerHTML = '<i class="bi bi-play-fill"></i> Reanudar';
+      actualizarMensajeEstado("Juego pausado.", "warning");
+    } else {
+      if (btnP)  btnP.innerHTML  = '<i class="bi bi-pause-fill"></i> Pausar';
+      if (btnPE) btnPE.innerHTML = '<i class="bi bi-pause-fill"></i> Pausar';
+      actualizarMensajeEstado("Â¡Juego en curso!", "success");
+    }
+  };
+
+  document.getElementById("btnPausar").addEventListener("click", manejarPausa);
+  document.getElementById("btnPausarExpandido").addEventListener("click", manejarPausa);
+
+  /* â”€â”€ REINICIAR â”€â”€ */
+  const manejarReiniciar = () => {
+    if (juegoActual) juegoActual.detener();
+    juegoActual   = null;
+    partidaActiva = false;
+
+    establecerTexto("puntajeJ1", "0");
+    establecerTexto("puntajeJ2", "0");
+    mostrarElemento("mensajeGameOver", false);
+    mostrarElemento("btnIniciar", true);
+    mostrarElemento("btnPausar", false);
+    mostrarElemento("btnReiniciar", false);
+    actualizarMensajeEstado("ConfigurÃ¡ los jugadores e iniciÃ¡ la partida.", "info");
+
+    volverAConfig();
+  };
+
+  document.getElementById("btnReiniciar").addEventListener("click", manejarReiniciar);
+  document.getElementById("btnReiniciarExpandido").addEventListener("click", manejarReiniciar);
+
+  /* â”€â”€ VOLVER A CONFIG â”€â”€ */
+  document.getElementById("btnVolverConfig").addEventListener("click", volverAConfig);
+
+  /* â”€â”€ TECLADO â”€â”€ */
+  document.addEventListener("keydown", (e) => {
+    if (!juegoActual || !partidaActiva) return;
+
+    const mapaJ1 = {
+      ArrowUp:    { x: 0,  y: -1 },
+      ArrowDown:  { x: 0,  y:  1 },
+      ArrowLeft:  { x: -1, y:  0 },
+      ArrowRight: { x: 1,  y:  0 }
+    };
+    const mapaJ2 = {
+      w: { x: 0,  y: -1 },
+      s: { x: 0,  y:  1 },
+      a: { x: -1, y:  0 },
+      d: { x: 1,  y:  0 }
+    };
+
+    if (mapaJ1[e.key]) {
+      e.preventDefault();
+      juegoActual.cambiarDireccionJ1(mapaJ1[e.key]);
+    }
+    if (modoActual === "2jugadores" && mapaJ2[e.key]) {
+      juegoActual.cambiarDireccionJ2(mapaJ2[e.key]);
+    }
+  });
+
+  /* â”€â”€ GUARDAR EDICIÃ“N â”€â”€ */
+  document.getElementById("btnGuardarEdicion").addEventListener("click", async () => {
+    const id      = obtenerValor("editarId");
+    const nombre  = obtenerValor("editarNombre");
+    const puntaje = parseInt(obtenerValor("editarPuntaje"), 10);
+    const modo    = document.getElementById("editarModo").value;
+
+    if (!validarNombre(nombre)) {
+      actualizarMensajeEstado("El nombre editado no es vÃ¡lido.", "danger");
+      return;
+    }
+    await modificarJugador(id, { nombre, puntaje, modo });
+    mostrarElemento("cardEditar", false);
+    actualizarMensajeEstado("Jugador actualizado correctamente.", "success");
+    await cargarYRenderizarJugadores();
+  });
+
+  /* â”€â”€ CANCELAR EDICIÃ“N â”€â”€ */
+  document.getElementById("btnCancelarEdicion").addEventListener("click", () => {
+    mostrarElemento("cardEditar", false);
+  });
+
+  /* â”€â”€ DESCARGAR TXT â”€â”€ */
+  document.getElementById("btnDescargarTxt").addEventListener("click", async () => {
+    const jugadores = await obtenerJugadores();
+    const lineas = jugadores
+      .sort((a, b) => b.puntaje - a.puntaje)
+      .map((j, i) =>
+        `${i + 1}. ${j.nombre} | Puntaje: ${j.puntaje} | Modo: ${j.modo} | Fecha: ${j.fecha}`
+      ).join("\n");
+    const contenido = `RANKING SNAKE\n${"=".repeat(40)}\n${lineas}\n${"=".repeat(40)}\nTotal jugadores: ${jugadores.length}`;
+    descargarTxt(contenido, "ranking_snake.txt");
+  });
+
+  /* â”€â”€ TOGGLE TEMA â”€â”€ */
+  document.getElementById("btnTema").addEventListener("click", toggleTema);
+
+  /* â”€â”€ CONTROLES TÃCTILES â”€â”€ */
+  inicializarControlesTactiles();
+}
+
+/* ============================================================
+   INICIO
+   ============================================================ */
+
+document.addEventListener("DOMContentLoaded", async () => {
+  await cargarYRenderizarJugadores();
+  inicializarEventos();
+});
+
+===== proyecto1\package.json =====
+{
+  "name": "proyecto1-snake",
+  "version": "1.0.0",
+  "description": "Juego Snake con modo 2 jugadores y persistencia de puntajes",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
+
+===== proyecto1\pages\index.html =====
+<!DOCTYPE html>
+<html lang="es" data-tema="claro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snake - Juego</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+  <link rel="stylesheet" href="../style/estilos.css" />
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg" id="barraNav">
+    <div class="container-fluid">
+      <span class="navbar-brand fw-bold fs-4">
+        <i class="bi bi-controller"></i> Snake
+      </span>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+        data-bs-target="#menuNav" aria-controls="menuNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="menuNav">
+        <ul class="navbar-nav ms-auto align-items-center gap-2">
+          <li class="nav-item"><a class="nav-link" href="#seccionJuego">Juego</a></li>
+          <li class="nav-item"><a class="nav-link" href="#seccionPuntajes">Puntajes</a></li>
+          <li class="nav-item">
+            <button class="btn btn-outline-secondary btn-sm" id="btnTema">
+              <i class="bi bi-moon-fill"></i> Modo Oscuro
+            </button>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ============================================================
+       VISTA NORMAL: configuraciÃ³n + canvas pequeÃ±o
+       ============================================================ -->
+  <div class="container-fluid mt-3 px-3" id="vistaConfig">
+    <div class="row g-3">
+
+      <!-- Panel izquierdo: configuraciÃ³n -->
+      <div class="col-12 col-lg-3">
+        <div class="card mb-3" id="cardConfig">
+          <div class="card-header fw-bold">
+            <i class="bi bi-gear-fill"></i> ConfiguraciÃ³n
+          </div>
+          <div class="card-body">
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Modo de juego</label>
+              <select class="form-select" id="selectModo">
+                <option value="1jugador">1 Jugador</option>
+                <option value="2jugadores">2 Jugadores</option>
+              </select>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label">Nombre Jugador 1</label>
+              <input type="text" class="form-control" id="inputNombreJ1"
+                placeholder="Jugador 1" maxlength="20" />
+              <div class="text-danger small mt-1 d-none" id="errorNombreJ1">
+                IngresÃ¡ un nombre vÃ¡lido.
+              </div>
+            </div>
+
+            <div class="mb-3 d-none" id="contenedorJ2">
+              <label class="form-label">Nombre Jugador 2</label>
+              <input type="text" class="form-control" id="inputNombreJ2"
+                placeholder="Jugador 2" maxlength="20" />
+              <div class="text-danger small mt-1 d-none" id="errorNombreJ2">
+                IngresÃ¡ un nombre vÃ¡lido.
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">
+                Velocidad inicial: <span id="labelVelocidad">5</span>
+              </label>
+              <input type="range" class="form-range" id="rangeVelocidad"
+                min="1" max="10" value="5" />
+            </div>
+
+            <button class="btn btn-success w-100" id="btnIniciar">
+              <i class="bi bi-play-fill"></i> Iniciar Juego
+            </button>
+            <button class="btn btn-warning w-100 mt-2 d-none" id="btnPausar">
+              <i class="bi bi-pause-fill"></i> Pausar
+            </button>
+            <button class="btn btn-danger w-100 mt-2 d-none" id="btnReiniciar">
+              <i class="bi bi-arrow-counterclockwise"></i> Reiniciar
+            </button>
+          </div>
+        </div>
+
+        <!-- Instrucciones de controles -->
+        <div class="card mb-3" id="cardControles">
+          <div class="card-header fw-bold">
+            <i class="bi bi-keyboard"></i> Controles
+          </div>
+          <div class="card-body small">
+            <p class="fw-semibold mb-1">Jugador 1:</p>
+            <p class="mb-1">â†‘ â†“ â† â†’ (flechas)</p>
+            <div id="controlesJ2Info" class="d-none">
+              <p class="fw-semibold mb-1 mt-2">Jugador 2:</p>
+              <p class="mb-0">W A S D</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Puntaje en tiempo real -->
+        <div class="card" id="cardPuntajeActual">
+          <div class="card-header fw-bold">
+            <i class="bi bi-trophy-fill"></i> Puntaje Actual
+          </div>
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span id="labelJ1Puntaje">Jugador 1</span>
+              <span class="badge bg-success fs-6" id="puntajeJ1">0</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center d-none" id="filaPuntajeJ2">
+              <span id="labelJ2Puntaje">Jugador 2</span>
+              <span class="badge bg-primary fs-6" id="puntajeJ2">0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel central: canvas -->
+      <div class="col-12 col-lg-6" id="seccionJuego">
+        <div class="card h-100" id="cardJuego">
+          <div class="card-header fw-bold text-center">
+            <i class="bi bi-joystick"></i> Tablero de Juego
+          </div>
+          <div class="card-body d-flex flex-column align-items-center justify-content-center p-2">
+            <div class="alert alert-info w-100 text-center mb-2" id="mensajeEstado">
+              ConfigurÃ¡ los jugadores e iniciÃ¡ la partida.
+            </div>
+            <!-- Canvas principal (vive aquÃ­ al inicio) -->
+        <div id="contenedorCanvasConfig">
+            <canvas
+                id="canvasJuego"
+                width="400"
+                height="400"
+                class="canvas-config border rounded"
+            ></canvas>
+        </div>
+            <div class="alert alert-danger w-100 text-center mt-2 d-none" id="mensajeGameOver">
+              Â¡Juego terminado!
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel derecho: ranking y ediciÃ³n -->
+      <div class="col-12 col-lg-3" id="seccionPuntajes">
+
+        <div class="card mb-3 d-none" id="cardEditar">
+          <div class="card-header fw-bold">
+            <i class="bi bi-pencil-fill"></i> Editar Jugador
+          </div>
+          <div class="card-body">
+            <input type="hidden" id="editarId" />
+            <div class="mb-2">
+              <label class="form-label">Nombre</label>
+              <input type="text" class="form-control" id="editarNombre" />
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Puntaje</label>
+              <input type="number" class="form-control" id="editarPuntaje" min="0" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Modo</label>
+              <select class="form-select" id="editarModo">
+                <option value="1jugador">1 Jugador</option>
+                <option value="2jugadores">2 Jugadores</option>
+              </select>
+            </div>
+            <button class="btn btn-primary w-100 mb-2" id="btnGuardarEdicion">
+              <i class="bi bi-check-lg"></i> Guardar cambios
+            </button>
+            <button class="btn btn-secondary w-100" id="btnCancelarEdicion">Cancelar</button>
+          </div>
+        </div>
+
+        <div class="card" id="cardPuntajes">
+          <div class="card-header d-flex justify-content-between align-items-center fw-bold">
+            <span><i class="bi bi-list-ol"></i> Ranking</span>
+            <div class="d-flex gap-2">
+              <button class="btn btn-outline-success btn-sm" id="btnDescargarTxt">
+                <i class="bi bi-download"></i>
+              </button>
+              <span class="badge bg-secondary" id="contadorJugadores">0</span>
+            </div>
+          </div>
+          <div class="card-body p-2">
+            <p class="text-center text-muted small" id="mensajeSinJugadores">
+              AÃºn no hay puntajes guardados.
+            </p>
+            <ul class="list-group list-group-flush" id="listaJugadores"></ul>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============================================================
+       VISTA JUEGO EXPANDIDO (se activa al presionar Iniciar)
+       ============================================================ -->
+  <div id="vistaJuegoExpandido" class="d-none">
+    <div class="container-fluid px-2 px-md-3 mt-2">
+
+      <!-- Barra superior: marcador completo -->
+      <div class="row g-2 mb-2">
+        <div class="col-12">
+          <div class="card marcador-card">
+            <div class="card-body py-2 px-3">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+
+                <!-- Info Jugador 1 -->
+                <div class="marcador-bloque">
+                  <span class="marcador-label" id="marcadorNombreJ1">Jugador 1</span>
+                  <span class="badge bg-success fs-6 ms-2" id="marcadorPuntajeJ1">0</span>
+                </div>
+
+                <!-- Nivel y Velocidad (centro) -->
+                <div class="marcador-centro d-flex gap-3">
+                  <div class="text-center">
+                    <div class="marcador-stat-label">Nivel</div>
+                    <div class="marcador-stat-valor" id="marcadorNivel">1</div>
+                  </div>
+                  <div class="text-center">
+                    <div class="marcador-stat-label">Velocidad</div>
+                    <div class="marcador-stat-valor" id="marcadorVelocidad">1</div>
+                  </div>
+                  <div class="text-center d-none" id="marcadorBloqueJ2Puntaje">
+                    <div class="marcador-stat-label" id="marcadorNombreJ2">Jugador 2</div>
+                    <div class="marcador-stat-valor">
+                      <span class="badge bg-primary fs-6" id="marcadorPuntajeJ2">0</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Botones de control -->
+                <div class="d-flex gap-2 flex-wrap">
+                  <button class="btn btn-warning btn-sm d-none" id="btnPausarExpandido">
+                    <i class="bi bi-pause-fill"></i> Pausar
+                  </button>
+                  <button class="btn btn-danger btn-sm d-none" id="btnReiniciarExpandido">
+                    <i class="bi bi-arrow-counterclockwise"></i> Reiniciar
+                  </button>
+                  <button class="btn btn-secondary btn-sm" id="btnVolverConfig">
+                    <i class="bi bi-x-lg"></i> Salir
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Canvas del juego (grande) -->
+      <div class="row g-2 mb-2">
+        <div class="col-12 d-flex justify-content-center position-relative">
+
+          <!-- NotificaciÃ³n de nivel (overlay sobre el canvas) -->
+          <div id="notificacionNivel" class="notificacion-nivel d-none">
+            Â¡Nivel 2!
+          </div>
+
+          <!-- Mensaje estado sobre el canvas -->
+          <div id="mensajeEstadoExpandido"
+            class="alert alert-info w-100 text-center mb-0 d-none"
+            style="max-width:600px;">
+          </div>
+
+          <!-- Contenedor receptor del canvas en vista expandida -->
+            <div id="contenedorCanvasExpandido" class="d-flex justify-content-center w-100">
+            </div>
+        </div>
+      </div>
+
+      <!-- Game Over en vista expandida -->
+      <div class="row g-2 mb-2 d-none" id="filaGameOverExpandido">
+        <div class="col-12">
+          <div class="alert alert-danger text-center fw-bold mb-0" id="mensajeGameOverExpandido">
+            Â¡Juego terminado!
+          </div>
+        </div>
+      </div>
+
+      <!-- Controles tÃ¡ctiles -->
+      <div class="row g-2 mb-3" id="filaControlesTactiles">
+
+        <!-- Controles Jugador 1 -->
+        <div class="col-6 col-md-6" id="bloqueControlesJ1">
+          <div class="card controles-card">
+            <div class="card-body p-2 text-center">
+              <div class="controles-titulo mb-2" id="tituloControlesJ1">Jugador 1</div>
+              <div class="pad-direccional">
+                <!-- Fila superior -->
+                <div class="pad-fila">
+                  <div class="pad-espacio"></div>
+                  <button class="btn-pad" id="j1Arriba"
+                    data-jugador="1" data-dir="arriba">
+                    <i class="bi bi-caret-up-fill"></i>
+                  </button>
+                  <div class="pad-espacio"></div>
+                </div>
+                <!-- Fila media -->
+                <div class="pad-fila">
+                  <button class="btn-pad" id="j1Izquierda"
+                    data-jugador="1" data-dir="izquierda">
+                    <i class="bi bi-caret-left-fill"></i>
+                  </button>
+                  <div class="pad-centro">â—</div>
+                  <button class="btn-pad" id="j1Derecha"
+                    data-jugador="1" data-dir="derecha">
+                    <i class="bi bi-caret-right-fill"></i>
+                  </button>
+                </div>
+                <!-- Fila inferior -->
+                <div class="pad-fila">
+                  <div class="pad-espacio"></div>
+                  <button class="btn-pad" id="j1Abajo"
+                    data-jugador="1" data-dir="abajo">
+                    <i class="bi bi-caret-down-fill"></i>
+                  </button>
+                  <div class="pad-espacio"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Controles Jugador 2 (oculto por defecto) -->
+        <div class="col-6 col-md-6 d-none" id="bloqueControlesJ2">
+          <div class="card controles-card">
+            <div class="card-body p-2 text-center">
+              <div class="controles-titulo mb-2" id="tituloControlesJ2">Jugador 2</div>
+              <div class="pad-direccional">
+                <!-- Fila superior -->
+                <div class="pad-fila">
+                  <div class="pad-espacio"></div>
+                  <button class="btn-pad btn-pad-j2" id="j2Arriba"
+                    data-jugador="2" data-dir="arriba">
+                    <i class="bi bi-caret-up-fill"></i>
+                  </button>
+                  <div class="pad-espacio"></div>
+                </div>
+                <!-- Fila media -->
+                <div class="pad-fila">
+                  <button class="btn-pad btn-pad-j2" id="j2Izquierda"
+                    data-jugador="2" data-dir="izquierda">
+                    <i class="bi bi-caret-left-fill"></i>
+                  </button>
+                  <div class="pad-centro pad-centro-j2">â—</div>
+                  <button class="btn-pad btn-pad-j2" id="j2Derecha"
+                    data-jugador="2" data-dir="derecha">
+                    <i class="bi bi-caret-right-fill"></i>
+                  </button>
+                </div>
+                <!-- Fila inferior -->
+                <div class="pad-fila">
+                  <div class="pad-espacio"></div>
+                  <button class="btn-pad btn-pad-j2" id="j2Abajo"
+                    data-jugador="2" data-dir="abajo">
+                    <i class="bi bi-caret-down-fill"></i>
+                  </button>
+                  <div class="pad-espacio"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <!-- fin filaControlesTactiles -->
+
+    </div>
+  </div>
+  <!-- fin vistaJuegoExpandido -->
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script type="module" src="../modules/main.js"></script>
+</body>
+</html>
+
+===== proyecto1\routes\jugadores.js =====
+/**
+ * Rutas Express para el CRUD completo de jugadores.
+ * Persiste los datos en /data/jugadores.txt usando fs (ES Modules).
+ *
+ * Rutas disponibles:
+ *  GET    /api/jugadores         â†’ obtener todos los jugadores
+ *  POST   /api/jugadores         â†’ agregar un jugador
+ *  PUT    /api/jugadores/:id     â†’ modificar un jugador
+ *  DELETE /api/jugadores/:id     â†’ eliminar un jugador
+ *  GET    /api/jugadores/archivo â†’ descargar el .txt
+ */
+
+import express from "express";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const router = express.Router();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/** Ruta absoluta al archivo de persistencia */
+const rutaArchivo = path.join(__dirname, "../data/jugadores.txt");
+
+/**
+ * Asegura que el directorio /data y el archivo existan.
+ * Si no existen, los crea vacÃ­os.
+ */
+function asegurarArchivo() {
+  const dir = path.join(__dirname, "../data");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  if (!fs.existsSync(rutaArchivo)) {
+    fs.writeFileSync(rutaArchivo, JSON.stringify([]), "utf-8");
+  }
+}
+
+/**
+ * Lee todos los jugadores del archivo .txt
+ * @returns {Array} Lista de jugadores
+ */
+function leerJugadores() {
+  asegurarArchivo();
+  const contenido = fs.readFileSync(rutaArchivo, "utf-8");
+  try {
+    return JSON.parse(contenido);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Escribe la lista de jugadores en el archivo .txt
+ * @param {Array} jugadores
+ */
+function escribirJugadores(jugadores) {
+  asegurarArchivo();
+  fs.writeFileSync(rutaArchivo, JSON.stringify(jugadores, null, 2), "utf-8");
+}
+
+/* GET: obtener todos los jugadores */
+router.get("/", (req, res) => {
+  const jugadores = leerJugadores();
+  res.json(jugadores);
+});
+
+/* GET: descargar el archivo .txt de jugadores */
+router.get("/archivo", (req, res) => {
+  asegurarArchivo();
+  res.download(rutaArchivo, "jugadores.txt");
+});
+
+/**
+ * POST: agregar un nuevo jugador
+ * Recibe: { nombre, puntaje, modo }
+ */
+router.post("/", (req, res) => {
+  const { nombre, puntaje, modo } = req.body;
+
+  /* ValidaciÃ³n bÃ¡sica de datos recibidos */
+  if (!nombre || puntaje === undefined || !modo) {
+    return res.status(400).json({ error: "Datos incompletos" });
+  }
+
+  const jugadores = leerJugadores();
+
+  /* Generar ID Ãºnico basado en timestamp */
+  const nuevoJugador = {
+    id: Date.now().toString(),
+    nombre: nombre.trim(),
+    puntaje: Number(puntaje),
+    modo,
+    fecha: new Date().toLocaleDateString("es-AR")
+  };
+
+  jugadores.push(nuevoJugador);
+  escribirJugadores(jugadores);
+
+  res.status(201).json(nuevoJugador);
+});
+
+/**
+ * PUT: modificar un jugador existente por ID
+ * Recibe: { nombre, puntaje, modo }
+ */
+router.put("/:id", (req, res) => {
+  const { id } = req.params;
+  const { nombre, puntaje, modo } = req.body;
+
+  const jugadores = leerJugadores();
+  const indice = jugadores.findIndex((j) => j.id === id);
+
+  if (indice === -1) {
+    return res.status(404).json({ error: "Jugador no encontrado" });
+  }
+
+  /* Actualizar campos si fueron enviados */
+  if (nombre !== undefined) jugadores[indice].nombre = nombre.trim();
+  if (puntaje !== undefined) jugadores[indice].puntaje = Number(puntaje);
+  if (modo !== undefined) jugadores[indice].modo = modo;
+
+  escribirJugadores(jugadores);
+  res.json(jugadores[indice]);
+});
+
+/**
+ * DELETE: eliminar un jugador por ID
+ */
+router.delete("/:id", (req, res) => {
+  const { id } = req.params;
+  const jugadores = leerJugadores();
+  const nuevaLista = jugadores.filter((j) => j.id !== id);
+
+  if (nuevaLista.length === jugadores.length) {
+    return res.status(404).json({ error: "Jugador no encontrado" });
+  }
+
+  escribirJugadores(nuevaLista);
+  res.json({ mensaje: "Jugador eliminado correctamente" });
+});
+
+export default router;
+
+===== proyecto1\server.js =====
+/**
+ * Servidor principal del proyecto Snake.
+ * Utiliza Express con ES Modules.
+ * Sirve archivos estÃ¡ticos y expone rutas para
+ * guardar, leer, modificar y eliminar jugadores en /data/jugadores.txt
+ */
+
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+import jugadoresRouter from "./routes/jugadores.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PUERTO = 3001;
+
+/* Middleware para parsear JSON en las peticiones */
+app.use(express.json());
+
+/* Servir archivos estÃ¡ticos desde la raÃ­z del proyecto */
+app.use("/pages", express.static(path.join(__dirname, "pages")));
+app.use("/style", express.static(path.join(__dirname, "style")));
+app.use("/modules", express.static(path.join(__dirname, "modules")));
+
+/* Rutas de la API para jugadores */
+app.use("/api/jugadores", jugadoresRouter);
+
+/* Ruta raÃ­z: redirige al HTML principal */
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "pages", "index.html"));
+});
+
+/* Iniciar servidor */
+app.listen(PUERTO, () => {
+  console.log(`Servidor Snake corriendo en http://localhost:${PUERTO}`);
+});
+
+===== proyecto1\style\estilos.css =====
+/* ============================================================
+   Estilos globales del proyecto Snake
+   Soporta modo claro y oscuro + vista expandida + controles tÃ¡ctiles
+   ============================================================ */
+
+/* Variables para modo claro */
+:root {
+  --fondo-body:    #f4f6f8;
+  --fondo-card:    #ffffff;
+  --texto-principal: #212529;
+  --texto-secundario: #6c757d;
+  --borde-card:    #dee2e6;
+  --fondo-navbar:  #343a40;
+  --texto-navbar:  #ffffff;
+  --fondo-canvas:  #1a1a2e;
+  --color-pad-j1:  #198754;
+  --color-pad-j1-hover: #146c43;
+  --color-pad-j2:  #0d6efd;
+  --color-pad-j2-hover: #0a58ca;
+}
+
+/* Variables para modo oscuro */
+[data-tema="oscuro"] {
+  --fondo-body:    #121212;
+  --fondo-card:    #1e1e2e;
+  --texto-principal: #e0e0e0;
+  --texto-secundario: #aaaaaa;
+  --borde-card:    #333344;
+  --fondo-navbar:  #0d0d1a;
+  --texto-navbar:  #e0e0e0;
+  --fondo-canvas:  #0d0d1a;
+}
+
+/* â”€â”€ Base â”€â”€ */
+body {
+  background-color: var(--fondo-body);
+  color: var(--texto-principal);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* â”€â”€ Navbar â”€â”€ */
+#barraNav {
+  background-color: var(--fondo-navbar) !important;
+}
+#barraNav .navbar-brand,
+#barraNav .nav-link {
+  color: var(--texto-navbar) !important;
+}
+#barraNav .nav-link:hover {
+  color: #adb5bd !important;
+}
+
+/* â”€â”€ Cards â”€â”€ */
+.card {
+  background-color: var(--fondo-card);
+  border-color: var(--borde-card);
+  color: var(--texto-principal);
+  transition: background-color 0.3s ease;
+  border-radius: 0.75rem;
+}
+.card-header {
+  background-color: var(--fondo-card);
+  border-bottom-color: var(--borde-card);
+  color: var(--texto-principal);
+  border-radius: 0.75rem 0.75rem 0 0 !important;
+}
+
+/* â”€â”€ Canvas del juego (vista normal) â”€â”€ */
+#canvasJuego {
+  background-color: var(--fondo-canvas);
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* â”€â”€ Canvas expandido â”€â”€ */
+.canvas-expandido {
+  background-color: var(--fondo-canvas);
+  width: 100%;
+  max-width: min(90vw, 90vh, 600px);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  display: block;
+  border-radius: 0.5rem;
+  box-shadow: 0 0 30px rgba(0, 255, 136, 0.15);
+}
+
+/* â”€â”€ Marcador de la vista expandida â”€â”€ */
+.marcador-card {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+
+.marcador-bloque {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.marcador-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--texto-principal);
+}
+
+.marcador-centro {
+  display: flex;
+  align-items: center;
+}
+
+.marcador-stat-label {
+  font-size: 0.7rem;
+  color: var(--texto-secundario);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.marcador-stat-valor {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--texto-principal);
+  line-height: 1.2;
+}
+
+/* â”€â”€ Controles tÃ¡ctiles â”€â”€ */
+.controles-card {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  border-radius: 0.75rem !important;
+}
+
+.controles-titulo {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--texto-secundario);
+}
+
+/* Contenedor del pad direccional */
+.pad-direccional {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  user-select: none;
+}
+
+/* Fila del pad (horizontal) */
+.pad-fila {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Espacio vacÃ­o en las esquinas del pad */
+.pad-espacio {
+  width: 48px;
+  height: 48px;
+}
+
+/* Centro del pad (â€¢) */
+.pad-centro {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  color: var(--color-pad-j1);
+  opacity: 0.6;
+}
+
+.pad-centro-j2 {
+  color: var(--color-pad-j2);
+}
+
+/* BotÃ³n del pad (jugador 1: verde) */
+.btn-pad {
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 10px;
+  background-color: var(--color-pad-j1);
+  color: #ffffff;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.1s ease, transform 0.1s ease, box-shadow 0.1s ease;
+  box-shadow: 0 3px 0 rgba(0,0,0,0.25);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.btn-pad:hover {
+  background-color: var(--color-pad-j1-hover);
+}
+
+.btn-pad:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.25);
+}
+
+/* BotÃ³n del pad jugador 2 (azul) */
+.btn-pad-j2 {
+  background-color: var(--color-pad-j2);
+}
+.btn-pad-j2:hover {
+  background-color: var(--color-pad-j2-hover);
+}
+
+/* En modo oscuro: ajuste de colores del pad */
+[data-tema="oscuro"] .btn-pad {
+  box-shadow: 0 3px 0 rgba(255,255,255,0.08);
+}
+
+/* â”€â”€ NotificaciÃ³n de nivel â”€â”€ */
+.notificacion-nivel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 100;
+  background: linear-gradient(135deg, #00ff88, #00cc66);
+  color: #0d1117;
+  font-size: 1.5rem;
+  font-weight: 800;
+  padding: 0.6rem 1.5rem;
+  border-radius: 2rem;
+  box-shadow: 0 4px 20px rgba(0, 255, 136, 0.4);
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+/* AnimaciÃ³n de entrada */
+.notificacion-entrando {
+  animation: nivelEntrada 0.4s ease forwards;
+}
+
+/* AnimaciÃ³n de salida */
+.notificacion-saliendo {
+  opacity: 0 !important;
+  transform: translate(-50%, -70%) !important;
+}
+
+@keyframes nivelEntrada {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -35%) scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* â”€â”€ Lista de jugadores â”€â”€ */
+.list-group-item {
+  background-color: var(--fondo-card);
+  border-color: var(--borde-card);
+  color: var(--texto-principal);
+}
+.list-group-item:hover {
+  background-color: rgba(0,0,0,0.05);
+}
+
+/* â”€â”€ Inputs en modo oscuro â”€â”€ */
+[data-tema="oscuro"] .form-control,
+[data-tema="oscuro"] .form-select,
+[data-tema="oscuro"] .form-range {
+  background-color: #2a2a3e;
+  border-color: #444466;
+  color: #e0e0e0;
+}
+[data-tema="oscuro"] .form-control::placeholder {
+  color: #888899;
+}
+[data-tema="oscuro"] .form-control:focus,
+[data-tema="oscuro"] .form-select:focus {
+  background-color: #2a2a3e;
+  border-color: #6666aa;
+  color: #e0e0e0;
+  box-shadow: 0 0 0 0.2rem rgba(102,102,170,0.25);
+}
+
+/* â”€â”€ Alertas en modo oscuro â”€â”€ */
+[data-tema="oscuro"] .alert-info {
+  background-color: #1a2a3a;
+  border-color: #1e4060;
+  color: #87ceeb;
+}
+[data-tema="oscuro"] .alert-danger {
+  background-color: #3a1a1a;
+  border-color: #601e1e;
+  color: #ff8080;
+}
+
+/* â”€â”€ Badge de puntaje â”€â”€ */
+.badge.fs-6 {
+  font-size: 1rem !important;
+  min-width: 50px;
+}
+
+/* â”€â”€ Responsive: canvas expandido en celular â”€â”€ */
+@media (max-width: 576px) {
+  #canvasJuego {
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  .canvas-expandido {
+    max-width: 95vw;
+  }
+
+  .btn-pad {
+    width: 54px;
+    height: 54px;
+    font-size: 1.3rem;
+    border-radius: 12px;
+  }
+
+  .pad-espacio {
+    width: 54px;
+    height: 54px;
+  }
+
+  .pad-centro {
+    width: 54px;
+    height: 54px;
+  }
+
+  .notificacion-nivel {
+    font-size: 1.2rem;
+    padding: 0.5rem 1.2rem;
+  }
+
+  .marcador-stat-valor {
+    font-size: 0.95rem;
+  }
+}
+
+/* â”€â”€ Responsive: tablets â”€â”€ */
+@media (min-width: 577px) and (max-width: 991px) {
+  .canvas-expandido {
+    max-width: 80vw;
+  }
+
+  .btn-pad {
+    width: 52px;
+    height: 52px;
+  }
+
+  .pad-espacio {
+    width: 52px;
+    height: 52px;
+  }
+
+  .pad-centro {
+    width: 52px;
+    height: 52px;
+  }
+}
+
+/* â”€â”€ Scrollbar modo oscuro â”€â”€ */
+[data-tema="oscuro"] ::-webkit-scrollbar        { width: 6px; }
+[data-tema="oscuro"] ::-webkit-scrollbar-track  { background: #1e1e2e; }
+[data-tema="oscuro"] ::-webkit-scrollbar-thumb  { background: #444466; border-radius: 3px; }
+
+/* â”€â”€ Scroll en lista de jugadores â”€â”€ */
+.card-body .list-group {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+===== proyecto2\data\jugadores.txt =====
+[]
+
+===== proyecto2\modules\dom.js =====
+/**
+ * dom.js â€” Proyecto Pac-Man
+ * Funciones reutilizables de manipulaciÃ³n del DOM.
+ * No contiene lÃ³gica de negocio.
+ */
+
+/**
+ * Muestra u oculta un elemento por ID.
+ * @param {string} id
+ * @param {boolean} visible
+ */
+export function mostrarElemento(id, visible) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  visible ? el.classList.remove("d-none") : el.classList.add("d-none");
+}
+
+/**
+ * Establece el texto de un elemento.
+ * @param {string} id
+ * @param {string} texto
+ */
+export function establecerTexto(id, texto) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = texto;
+}
+
+/**
+ * Obtiene y limpia el valor de un input.
+ * @param {string} id
+ * @returns {string}
+ */
+export function obtenerValor(id) {
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : "";
+}
+
+/**
+ * Establece el valor de un input.
+ * @param {string} id
+ * @param {string|number} valor
+ */
+export function establecerValor(id, valor) {
+  const el = document.getElementById(id);
+  if (el) el.value = valor;
+}
+
+/**
+ * Muestra u oculta un mensaje de error.
+ * @param {string} idError
+ * @param {boolean} mostrar
+ */
+export function toggleError(idError, mostrar) {
+  const el = document.getElementById(idError);
+  if (!el) return;
+  mostrar ? el.classList.remove("d-none") : el.classList.add("d-none");
+}
+
+/**
+ * Actualiza el mensaje de estado del juego.
+ * @param {string} mensaje
+ * @param {string} tipo - Clase Bootstrap alert
+ */
+export function actualizarMensajeEstado(mensaje, tipo = "info") {
+  const el = document.getElementById("mensajeEstado");
+  if (!el) return;
+  el.className = `alert alert-${tipo} w-100 text-center mb-2`;
+  el.textContent = mensaje;
+}
+
+/**
+ * Renderiza los Ã­conos de vidas de un jugador.
+ * Muestra corazones llenos o vacÃ­os segÃºn las vidas restantes.
+ * @param {string} idContenedor - ID del div contenedor
+ * @param {number} vidasActuales - Vidas restantes
+ * @param {number} vidasMaximas - Total de vidas
+ */
+export function renderizarVidas(idContenedor, vidasActuales, vidasMaximas) {
+  const contenedor = document.getElementById(idContenedor);
+  if (!contenedor) return;
+  contenedor.innerHTML = "";
+
+  for (let i = 0; i < vidasMaximas; i++) {
+    const icono = document.createElement("i");
+    icono.className = `bi bi-heart-fill vida-icono${i >= vidasActuales ? " perdida" : ""}`;
+    contenedor.appendChild(icono);
+  }
+}
+
+/**
+ * Renderiza la lista de jugadores con acciones de editar y eliminar.
+ * @param {Array} jugadores
+ * @param {Function} onEditar
+ * @param {Function} onEliminar
+ */
+export function renderizarListaJugadores(jugadores, onEditar, onEliminar) {
+  const lista = document.getElementById("listaJugadores");
+  const sinJugadores = document.getElementById("mensajeSinJugadores");
+  const contador = document.getElementById("contadorJugadores");
+
+  if (!lista) return;
+  lista.innerHTML = "";
+  if (contador) contador.textContent = jugadores.length;
+
+  if (jugadores.length === 0) {
+    if (sinJugadores) sinJugadores.classList.remove("d-none");
+    return;
+  }
+
+  if (sinJugadores) sinJugadores.classList.add("d-none");
+
+  const ordenados = [...jugadores].sort((a, b) => b.puntaje - a.puntaje);
+
+  ordenados.forEach((jugador, idx) => {
+    const li = document.createElement("li");
+    li.className =
+      "list-group-item d-flex justify-content-between align-items-start py-2 px-2";
+    li.dataset.id = jugador.id;
+
+    li.innerHTML = `
+      <div>
+        <span class="fw-semibold">${idx + 1}. ${jugador.nombre}</span><br/>
+        <small class="text-muted">
+          Puntaje: <strong>${jugador.puntaje}</strong> |
+          Nivel: ${jugador.nivel} | Modo: ${jugador.modo} | ${jugador.fecha}
+        </small>
+      </div>
+      <div class="d-flex gap-1 ms-2">
+        <button class="btn btn-outline-primary btn-sm btnEditar" data-id="${jugador.id}">
+          <i class="bi bi-pencil"></i>
+        </button>
+        <button class="btn btn-outline-danger btn-sm btnEliminar" data-id="${jugador.id}">
+          <i class="bi bi-trash"></i>
+        </button>
+      </div>
+    `;
+
+    li.querySelector(".btnEditar").addEventListener("click", () => onEditar(jugador));
+    li.querySelector(".btnEliminar").addEventListener("click", () => onEliminar(jugador.id));
+    lista.appendChild(li);
+  });
+}
+
+/**
+ * Descarga contenido como archivo .txt en el navegador.
+ * Usa Blob + URL.createObjectURL() + elemento <a> dinÃ¡mico.
+ * @param {string} contenido
+ * @param {string} nombreArchivo
+ */
+export function descargarTxt(contenido, nombreArchivo) {
+  const blob = new Blob([contenido], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement("a");
+  enlace.href = url;
+  enlace.download = nombreArchivo;
+  document.body.appendChild(enlace);
+  enlace.click();
+  document.body.removeChild(enlace);
+  URL.revokeObjectURL(url);
+}
+
+===== proyecto2\modules\juego.js =====
+/**
+ * juego.js â€” Proyecto Pac-Man
+ *
+ * LÃ³gica completa del juego con sistema de fantasmas autÃ©ntico:
+ *  - Blinky (rojo):    comienza fuera de la caja desde el inicio
+ *  - Pinky (rosa):     sale inmediatamente al arrancar el nivel
+ *  - Inky (celeste):   sale cuando Pac-Man comiÃ³ 30 puntos (nivel 1)
+ *  - Clyde (naranja):  sale cuando Pac-Man comiÃ³ 60 puntos (nivel 1)
+ *
+ * Umbrales de salida disminuyen en niveles avanzados.
+ * Temporizador global: si pasan ~4 s sin comer ningÃºn punto,
+ * fuerza la salida del siguiente fantasma pendiente.
+ *
+ * AnimaciÃ³n de salida predeterminada:
+ *  1. Moverse horizontalmente al centro de la caja.
+ *  2. Subir verticalmente hasta cruzar la puerta.
+ *  3. Al salir, girar a la izquierda e iniciar persecuciÃ³n/dispersiÃ³n.
+ *
+ * Los fantasmas NO pueden superponerse entre sÃ­.
+ */
+
+/* â”€â”€â”€ Constantes de layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/** PÃ­xeles por celda */
+const CELDA = 21;
+
+/** Dimensiones del tablero */
+const FILAS    = 21;
+const COLUMNAS = 20;
+
+/**
+ * Columna y fila exactas del centro de la puerta de salida.
+ * Los fantasmas suben hasta aquÃ­ antes de quedar "libres".
+ */
+const PUERTA_COL  = 9;   // columna central de la puerta
+const PUERTA_FILA = 8;   // fila justo encima de la caja (la puerta)
+
+/**
+ * Centro horizontal de la caja de fantasmas (en celdas).
+ * Los fantasmas se alinean aquÃ­ antes de subir.
+ */
+const CAJA_CENTRO_COL = 9;
+
+/* â”€â”€â”€ Mapa base â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/**
+ * 0 = camino con punto pequeÃ±o
+ * 1 = pared
+ * 2 = espacio vacÃ­o (sin punto)
+ * 3 = power-up (punto grande)
+ * 4 = interior de la caja de fantasmas (sin punto, transitables solo por fantasmas)
+ */
+const MAPA_BASE = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1],
+  [1,3,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,3,1],
+  [1,0,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,1,1,0,1,0,1,1,1,1,1,1,0,1,0,1,1,0,1],
+  [1,0,0,0,0,1,0,0,0,1,1,0,0,0,1,0,0,0,0,1],
+  [1,1,1,1,0,1,1,1,2,1,1,2,1,1,1,0,1,1,1,1],
+  [1,1,1,1,0,1,2,2,2,2,2,2,2,2,1,0,1,1,1,1],  // fila 8 â†’ puerta (cols 8-13 vacÃ­os)
+  [1,1,1,1,0,1,2,1,4,4,4,4,1,2,1,0,1,1,1,1],  // fila 9 â†’ techo caja
+  [2,2,2,2,0,2,2,1,4,4,4,4,1,2,2,0,2,2,2,2],  // fila 10 â†’ interior caja
+  [1,1,1,1,0,1,2,1,4,4,4,4,1,2,1,0,1,1,1,1],  // fila 11 â†’ interior caja
+  [1,1,1,1,0,1,2,2,2,2,2,2,2,2,1,0,1,1,1,1],  // fila 12 â†’ piso caja
+  [1,1,1,1,0,1,2,1,1,1,1,1,1,2,1,0,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,1],
+  [1,0,1,1,0,1,1,1,0,1,1,0,1,1,1,0,1,1,0,1],
+  [1,3,0,1,0,0,0,0,0,2,2,0,0,0,0,0,1,0,3,1],
+  [1,1,0,1,0,1,0,1,1,1,1,1,1,0,1,0,1,0,1,1],
+  [1,0,0,0,0,1,0,0,0,1,1,0,0,0,1,0,0,0,0,1],
+  [1,0,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+/* â”€â”€â”€ DefiniciÃ³n de los 4 fantasmas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/**
+ * Datos iniciales de cada fantasma.
+ * - colInicio / filaInicio : posiciÃ³n dentro de la caja
+ * - colSalida / filaSalida : posiciÃ³n donde queda al salir (sobre la puerta)
+ * - umbralBase             : puntos que debe comer Pac-Man para que salga (nivel 1)
+ * - saleInmediato          : si true, ignora el umbral y sale al iniciar el nivel
+ */
+const DEFINICION_FANTASMAS = [
+  {
+    nombre:       "Blinky",
+    color:        "#ff0000",
+    colInicio:    PUERTA_COL,
+    filaInicio:   PUERTA_FILA,   // ya empieza fuera de la caja
+    umbralBase:   0,
+    saleInmediato: true,
+    fueraDeCaja:  true           // comienza libre
+  },
+  {
+    nombre:       "Pinky",
+    color:        "#ffb8ff",
+    colInicio:    CAJA_CENTRO_COL,
+    filaInicio:   10,
+    umbralBase:   0,
+    saleInmediato: true,
+    fueraDeCaja:  false
+  },
+  {
+    nombre:       "Inky",
+    color:        "#00ffff",
+    colInicio:    8,
+    filaInicio:   10,
+    umbralBase:   30,
+    saleInmediato: false,
+    fueraDeCaja:  false
+  },
+  {
+    nombre:       "Clyde",
+    color:        "#ffb852",
+    colInicio:    10,
+    filaInicio:   10,
+    umbralBase:   60,
+    saleInmediato: false,
+    fueraDeCaja:  false
+  }
+];
+
+/* â”€â”€â”€ Utilidades generales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/** Copia profunda del mapa para cada nueva partida. */
+function clonarMapa() {
+  return MAPA_BASE.map(fila => [...fila]);
+}
+
+/**
+ * Calcula el umbral de puntos ajustado al nivel actual.
+ * En niveles superiores los umbrales se reducen drÃ¡sticamente.
+ * @param {number} umbralBase
+ * @param {number} nivel
+ * @returns {number}
+ */
+function umbralAjustado(umbralBase, nivel) {
+  if (umbralBase === 0) return 0;
+  // ReducciÃ³n del 40 % por cada nivel extra, mÃ­nimo 1 punto
+  return Math.max(1, Math.floor(umbralBase * Math.pow(0.6, nivel - 1)));
+}
+
+/**
+ * Comprueba si una celda del mapa es transitable para un fantasma.
+ * Los fantasmas pueden pasar por celdas tipo 2 y 4 (interior de la caja),
+ * pero Pac-Man no puede entrar en la zona 4.
+ * @param {Array} mapa
+ * @param {number} col
+ * @param {number} fila
+ * @returns {boolean}
+ */
+function esCeldaLibreFantasma(mapa, col, fila) {
+  if (fila < 0 || fila >= FILAS || col < 0 || col >= COLUMNAS) return false;
+  const c = mapa[fila][col];
+  return c !== 1;
+}
+
+/**
+ * Comprueba si una celda es transitable para Pac-Man.
+ * Pac-Man no puede entrar en celdas tipo 1 ni tipo 4.
+ * @param {Array} mapa
+ * @param {number} col
+ * @param {number} fila
+ * @returns {boolean}
+ */
+function esCeldaLibrePacman(mapa, col, fila) {
+  if (fila < 0 || fila >= FILAS || col < 0 || col >= COLUMNAS) return false;
+  const c = mapa[fila][col];
+  return c !== 1 && c !== 4;
+}
+
+/* â”€â”€â”€ Pac-Man â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/**
+ * Crea el estado inicial de un Pac-Man.
+ * @param {number} col
+ * @param {number} fila
+ * @param {string} color
+ * @returns {Object}
+ */
+function crearPacman(col, fila, color) {
+  return {
+    col,
+    fila,
+    direccion:        { dc: 0,  df: 0 },
+    proximaDireccion: { dc: 1,  df: 0 },
+    color,
+    vidas:            3,
+    puntaje:          0,
+    poderActivo:      false,
+    tiempoPoder:      0,
+    vivo:             true,
+    anguloApertura:   0,
+    abriendoBoca:     true,
+    /** Columna/fila de reapariciÃ³n */
+    colRespawn:       col,
+    filaRespawn:      fila
+  };
+}
+
+/* â”€â”€â”€ Fantasma â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/**
+ * Crea el estado de un fantasma a partir de su definiciÃ³n.
+ * @param {Object} def - Entrada de DEFINICION_FANTASMAS
+ * @returns {Object}
+ */
+function crearFantasma(def) {
+  return {
+    nombre:         def.nombre,
+    color:          def.color,
+    colorOriginal:  def.color,
+
+    /** PosiciÃ³n actual (en celdas) */
+    col:            def.colInicio,
+    fila:           def.filaInicio,
+
+    /** DirecciÃ³n de movimiento actual */
+    direccion:      { dc: 0, df: 0 },
+
+    /** Indica si ya estÃ¡ libre (fuera de la caja) */
+    fueraDeCaja:    def.fueraDeCaja,
+
+    /**
+     * Estado de la animaciÃ³n de salida:
+     *  'esperando'   â†’ dentro de la caja, aÃºn no cumpliÃ³ el umbral
+     *  'centrando'   â†’ moviÃ©ndose horizontalmente al centro de la caja
+     *  'subiendo'    â†’ subiendo verticalmente hacia la puerta
+     *  'libre'       â†’ ya saliÃ³, persigue/dispersa normalmente
+     */
+    estadoSalida:   def.fueraDeCaja ? 'libre' : 'esperando',
+
+    /** Umbral de puntos (ajustado al nivel) necesario para salir */
+    umbralPuntos:   def.umbralBase,
+
+    /** Â¿Sale apenas arranca el nivel (independientemente del umbral)? */
+    saleInmediato:  def.saleInmediato,
+
+    /** Contador de ticks entre movimientos (controla velocidad) */
+    ticksMovimiento: 0,
+
+    /** true mientras Pac-Man tiene poder activo */
+    asustado:       false,
+
+    /** Ticks restantes de estado asustado */
+    tiempoAsustado: 0,
+
+    /**
+     * DirecciÃ³n prohibida: el opuesto a la direcciÃ³n con la que llegÃ³.
+     * Evita que el fantasma "rebote" dando media vuelta.
+     */
+    dirProhibida:   { dc: 0, df: 0 }
+  };
+}
+
+/* â”€â”€â”€ Clase principal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/**
+ * Clase JuegoPacman
+ * Gestiona el ciclo completo: mapa, Pac-Men, fantasmas, puntaje, niveles.
+ */
+export class JuegoPacman {
+
+  /**
+   * @param {HTMLCanvasElement} canvas
+   * @param {Object} config
+   * @param {string}   config.modo        - '1jugador' | '2jugadores'
+   * @param {Function} config.onPuntaje   - (p1, p2, v1, v2, nivel)
+   * @param {Function} config.onFinJuego  - (p1, p2, nivel)
+   */
+  constructor(canvas, config) {
+    this.canvas = canvas;
+    this.ctx    = canvas.getContext('2d');
+    this.config = config;
+
+    this.mapa             = clonarMapa();
+    this.nivel            = 1;
+    this.intervalo        = null;
+    this.pausado          = false;
+    this.tick             = 0;
+
+    /** Puntos comidos en esta partida (contador global para umbrales) */
+    this.puntosComidos    = 0;
+
+    /** Ticks transcurridos desde el Ãºltimo punto comido (para el timer global) */
+    this.ticksSinComer    = 0;
+
+    /**
+     * Cada 40 ticks â‰ˆ 4 s (intervalo del bucle = 100 ms).
+     * Si se supera este umbral sin comer, se fuerza la salida
+     * del siguiente fantasma que aÃºn estÃ© esperando.
+     */
+    this.TIMER_INACTIVIDAD = 40;
+
+    this.totalPuntos      = this._contarPuntos();
+    this.puntosRestantes  = this.totalPuntos;
+
+    /* Crear Pac-Men */
+    this.pacman1 = crearPacman(10, 16, '#FFD700');
+    this.pacman2 = config.modo === '2jugadores'
+      ? crearPacman(9, 16, '#FF69B4')
+      : null;
+
+    /* Crear los 4 fantasmas */
+    this.fantasmas = DEFINICION_FANTASMAS.map(def => crearFantasma(def));
+
+    /* Ajustar umbrales al nivel actual */
+    this._ajustarUmbrales();
+
+    /* Blinky arranca libre; Pinky inicia animaciÃ³n de salida de inmediato */
+    this._iniciarSalidaInmediata();
+  }
+
+  /* â”€â”€ InicializaciÃ³n â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /**
+   * Ajusta los umbrales de salida de cada fantasma segÃºn el nivel.
+   * Llamado al iniciar y al avanzar de nivel.
+   */
+  _ajustarUmbrales() {
+    for (const f of this.fantasmas) {
+      const def = DEFINICION_FANTASMAS.find(d => d.nombre === f.nombre);
+      f.umbralPuntos = umbralAjustado(def.umbralBase, this.nivel);
+    }
+  }
+
+  /**
+   * Inicia la animaciÃ³n de salida de los fantasmas con saleInmediato = true
+   * que todavÃ­a estÃ¡n dentro de la caja.
+   */
+  _iniciarSalidaInmediata() {
+    for (const f of this.fantasmas) {
+      if (f.saleInmediato && !f.fueraDeCaja) {
+        f.estadoSalida = 'centrando';
+      }
+    }
+  }
+
+  /** Cuenta el total de puntos (celdas 0 y 3) en el mapa. */
+  _contarPuntos() {
+    let total = 0;
+    for (const fila of MAPA_BASE) {
+      for (const celda of fila) {
+        if (celda === 0 || celda === 3) total++;
+      }
+    }
+    return total;
+  }
+
+  /* â”€â”€ Control del bucle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /** Inicia el bucle principal a 100 ms por tick. */
+  iniciar() {
+    if (this.intervalo) clearInterval(this.intervalo);
+    this.intervalo = setInterval(() => this.actualizar(), 100);
+  }
+
+  /**
+   * Alterna pausa / reanudaciÃ³n.
+   * @returns {boolean} true si quedÃ³ pausado
+   */
+  togglePausa() {
+    if (this.pausado) {
+      this.intervalo = setInterval(() => this.actualizar(), 100);
+      this.pausado   = false;
+    } else {
+      clearInterval(this.intervalo);
+      this.pausado = true;
+    }
+    return this.pausado;
+  }
+
+  /** Detiene el bucle. */
+  detener() {
+    if (this.intervalo) clearInterval(this.intervalo);
+  }
+
+  /* â”€â”€ DirecciÃ³n deseada de los Pac-Men â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /** @param {{ dc:number, df:number }} dir */
+  moverJ1(dir) { this.pacman1.proximaDireccion = dir; }
+
+  /** @param {{ dc:number, df:number }} dir */
+  moverJ2(dir) { if (this.pacman2) this.pacman2.proximaDireccion = dir; }
+
+  /* â”€â”€ Ciclo principal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /**
+   * Tick del juego: mueve personajes, detecta eventos y renderiza.
+   */
+  actualizar() {
+    this.tick++;
+
+    /* Timer de inactividad: incrementar si no se comiÃ³ ningÃºn punto este tick */
+    this.ticksSinComer++;
+
+    /* Mover Pac-Men en ticks pares (velocidad â‰ˆ 1 celda cada 200 ms) */
+    if (this.tick % 2 === 0) {
+      this._moverPacman(this.pacman1);
+      if (this.pacman2) this._moverPacman(this.pacman2);
+    }
+
+    /* Procesar fantasmas: salida de caja + movimiento libre */
+    this._procesarFantasmas();
+
+    /* Verificar si el timer global fuerza la salida del siguiente */
+    this._verificarTimerInactividad();
+
+    /* Detectar colisiones Pac-Man â†” fantasmas */
+    this._detectarColisiones();
+
+    /* Notificar estado a la interfaz */
+    this.config.onPuntaje(
+      this.pacman1.puntaje,
+      this.pacman2 ? this.pacman2.puntaje : 0,
+      this.pacman1.vidas,
+      this.pacman2 ? this.pacman2.vidas : 0,
+      this.nivel
+    );
+
+    /* Â¿TerminÃ³ el juego? */
+    const pm1Muerto = !this.pacman1.vivo;
+    const pm2Muerto = this.pacman2 ? !this.pacman2.vivo : true;
+    const juegoTerminado = this.pacman2
+      ? (pm1Muerto && pm2Muerto)
+      : pm1Muerto;
+
+    if (juegoTerminado) {
+      this.detener();
+      this.renderizar();
+      this.config.onFinJuego(
+        this.pacman1.puntaje,
+        this.pacman2 ? this.pacman2.puntaje : 0,
+        this.nivel
+      );
+      return;
+    }
+
+    /* Â¿Se completÃ³ el nivel? */
+    if (this.puntosRestantes <= 0) this._avanzarNivel();
+
+    this.renderizar();
+  }
+
+  /* â”€â”€ Pac-Man: movimiento y consumo de puntos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /**
+   * Mueve un Pac-Man en su direcciÃ³n actual.
+   * Intenta aplicar la prÃ³xima direcciÃ³n si el camino estÃ¡ libre.
+   * Consume puntos y power-ups al pasar sobre ellos.
+   * @param {Object} pm - Objeto Pac-Man
+   */
+  _moverPacman(pm) {
+    if (!pm.vivo) return;
+
+    /* Intentar prÃ³xima direcciÃ³n */
+    const { dc, df } = pm.proximaDireccion;
+    if (esCeldaLibrePacman(this.mapa, pm.col + dc, pm.fila + df)) {
+      pm.direccion = { ...pm.proximaDireccion };
+    }
+
+    /* Aplicar direcciÃ³n actual */
+    const nc = pm.col + pm.direccion.dc;
+    const nf = pm.fila + pm.direccion.df;
+
+    if (esCeldaLibrePacman(this.mapa, nc, nf)) {
+      pm.col = nc;
+      pm.fila = nf;
+
+      /* TÃºnel lateral */
+      if (pm.col < 0)        pm.col = COLUMNAS - 1;
+      if (pm.col >= COLUMNAS) pm.col = 0;
+    }
+
+    /* Consumir punto */
+    const celda = this.mapa[pm.fila][pm.col];
+    if (celda === 0) {
+      pm.puntaje += 10;
+      this.mapa[pm.fila][pm.col] = 2;
+      this.puntosRestantes--;
+      this.puntosComidos++;
+      this.ticksSinComer = 0;          // reiniciar timer de inactividad
+      this._verificarUmbralesFantasmas();
+    } else if (celda === 3) {
+      pm.puntaje += 50;
+      this.mapa[pm.fila][pm.col] = 2;
+      this.puntosRestantes--;
+      this.puntosComidos++;
+      this.ticksSinComer = 0;
+      this._activarPoder(pm);
+      this._verificarUmbralesFantasmas();
+    }
+
+    /* AnimaciÃ³n de la boca */
+    if (pm.abriendoBoca) {
+      pm.anguloApertura += 0.15;
+      if (pm.anguloApertura >= 0.35) pm.abriendoBoca = false;
+    } else {
+      pm.anguloApertura -= 0.15;
+      if (pm.anguloApertura <= 0)    pm.abriendoBoca = true;
+    }
+
+    /* Decrementar poder */
+    if (pm.poderActivo) {
+      pm.tiempoPoder--;
+      if (pm.tiempoPoder <= 0) {
+        pm.poderActivo = false;
+        this._desactivarAsustar();
+      }
+    }
+  }
+
+  /* â”€â”€ Poder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /**
+   * Activa el poder de Pac-Man: asusta a todos los fantasmas libres.
+   * @param {Object} pm
+   */
+  _activarPoder(pm) {
+    pm.poderActivo  = true;
+    pm.tiempoPoder  = 50;
+    for (const f of this.fantasmas) {
+      if (f.estadoSalida === 'libre') {
+        f.asustado      = true;
+        f.color         = '#2222ff';
+        f.tiempoAsustado = 50;
+      }
+    }
+  }
+
+  /** Desactiva el estado asustado de todos los fantasmas. */
+  _desactivarAsustar() {
+    for (const f of this.fantasmas) {
+      f.asustado = false;
+      f.color    = f.colorOriginal;
+    }
+  }
+
+  /* â”€â”€ Umbrales y timer de inactividad â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /**
+   * Revisa si algÃºn fantasma en 'esperando' ya alcanzÃ³ su umbral
+   * de puntos comidos y, si es asÃ­, inicia su animaciÃ³n de salida.
+   */
+  _verificarUmbralesFantasmas() {
+    for (const f of this.fantasmas) {
+      if (
+        f.estadoSalida === 'esperando' &&
+        this.puntosComidos >= f.umbralPuntos
+      ) {
+        f.estadoSalida = 'centrando';
+      }
+    }
+  }
+
+  /**
+   * Si el timer de inactividad supera el umbral, fuerza la salida
+   * del primer fantasma que siga en estado 'esperando'.
+   */
+  _verificarTimerInactividad() {
+    if (this.ticksSinComer < this.TIMER_INACTIVIDAD) return;
+
+    const siguiente = this.fantasmas.find(f => f.estadoSalida === 'esperando');
+    if (siguiente) {
+      siguiente.estadoSalida = 'centrando';
+    }
+    /* Reiniciar el timer para que no fuerce salidas en cascada */
+    this.ticksSinComer = 0;
+  }
+
+  /* â”€â”€ AnimaciÃ³n de salida de la caja â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /**
+   * Procesa la animaciÃ³n de salida para un fantasma segÃºn su estado:
+   *  'centrando' â†’ se desplaza a CAJA_CENTRO_COL
+   *  'subiendo'  â†’ sube hasta PUERTA_FILA
+   *  'libre'     â†’ sale de la funciÃ³n (se procesarÃ¡ con _moverFantasmaLibre)
+   *
+   * @param {Object} f - Fantasma
+   */
+  _procesarSalidaCaja(f) {
+    if (f.estadoSalida === 'centrando') {
+      if (f.col < CAJA_CENTRO_COL) {
+        f.col++;
+        f.direccion = { dc: 1, df: 0 };
+      } else if (f.col > CAJA_CENTRO_COL) {
+        f.col--;
+        f.direccion = { dc: -1, df: 0 };
+      } else {
+        /* LlegÃ³ al centro: comenzar a subir */
+        f.estadoSalida = 'subiendo';
+        f.direccion    = { dc: 0, df: -1 };
+      }
+      return;
+    }
+
+    if (f.estadoSalida === 'subiendo') {
+      if (f.fila > PUERTA_FILA) {
+        f.fila--;
+        f.direccion = { dc: 0, df: -1 };
+      } else {
+        /*
+         * CruzÃ³ la puerta: queda libre.
+         * SegÃºn la especificaciÃ³n, al salir el fantasma gira a la izquierda.
+         */
+        f.estadoSalida  = 'libre';
+        f.fueraDeCaja   = true;
+        f.direccion     = { dc: -1, df: 0 };  // girar a la izquierda
+        f.dirProhibida  = { dc: 1,  df: 0 };  // no puede volver a la derecha inmediato
+      }
+    }
+  }
+
+  /* â”€â”€ Movimiento de fantasmas libres â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /**
+   * Mueve un fantasma libre usando IA de persecuciÃ³n / dispersiÃ³n.
+   * El fantasma no puede dar media vuelta (direcciÃ³n prohibida) y
+   * no puede superponerse con otro fantasma.
+   *
+   * @param {Object} f          - Fantasma a mover
+   * @param {number} indice     - Ãndice en this.fantasmas (para anti-superposiciÃ³n)
+   */
+  _moverFantasmaLibre(f, indice) {
+    f.ticksMovimiento++;
+
+    /* Velocidad base: los fantasmas se mueven cada 2 ticks (~200 ms).
+       Si estÃ¡n asustados, se mueven cada 3 ticks (mÃ¡s lentos). */
+    const intervalo = f.asustado ? 3 : Math.max(1, 3 - Math.floor(this.nivel / 3));
+    if (f.ticksMovimiento < intervalo) return;
+    f.ticksMovimiento = 0;
+
+    const direcciones = [
+      { dc:  1, df:  0 },
+      { dc: -1, df:  0 },
+      { dc:  0, df:  1 },
+      { dc:  0, df: -1 }
+    ];
+
+    /* Objetivo: perseguir al Pac-Man mÃ¡s cercano (o alejarse si asustado) */
+    let objetivo = this.pacman1;
+    if (this.pacman2 && this.pacman2.vivo) {
+      const d1 = Math.abs(f.col - this.pacman1.col) + Math.abs(f.fila - this.pacman1.fila);
+      const d2 = Math.abs(f.col - this.pacman2.col) + Math.abs(f.fila - this.pacman2.fila);
+      if (d2 < d1) objetivo = this.pacman2;
+    }
+
+    /* Ordenar direcciones por distancia al objetivo */
+    const dirOrdenadas = [...direcciones].sort((a, b) => {
+      const distA = Math.abs(f.col + a.dc - objetivo.col) + Math.abs(f.fila + a.df - objetivo.fila);
+      const distB = Math.abs(f.col + b.dc - objetivo.col) + Math.abs(f.fila + b.df - objetivo.fila);
+      /* Si asustado, se aleja; si normal, persigue */
+      return f.asustado ? distB - distA : distA - distB;
+    });
+
+    /* Elegir la primera direcciÃ³n vÃ¡lida:
+       - camino libre para fantasmas
+       - no es la direcciÃ³n prohibida (anti-rebote de 180Â°)
+       - la celda destino no estÃ¡ ocupada por otro fantasma */
+    for (const dir of dirOrdenadas) {
+      const nc = f.col + dir.dc;
+      const nf = f.fila + dir.df;
+
+      /* Descartar direcciÃ³n prohibida */
+      if (dir.dc === f.dirProhibida.dc && dir.df === f.dirProhibida.df) continue;
+
+      /* Descartar si la celda no es transitable */
+      if (!esCeldaLibreFantasma(this.mapa, nc, nf)) continue;
+
+      /* Descartar si otro fantasma libre ya ocupa esa celda */
+      const ocupadaPorOtro = this.fantasmas.some((otro, i) => {
+        if (i === indice) return false;                 // no comparar consigo mismo
+        if (otro.estadoSalida !== 'libre') return false; // solo considerar los libres
+        return otro.col === nc && otro.fila === nf;
+      });
+      if (ocupadaPorOtro) continue;
+
+      /* Mover */
+      f.col          = nc;
+      f.fila         = nf;
+      f.dirProhibida = { dc: -dir.dc, df: -dir.df };  // guardar opuesto
+      f.direccion    = dir;
+      break;
+    }
+
+    /* Decrementar tiempo asustado */
+    if (f.asustado) {
+      f.tiempoAsustado--;
+      if (f.tiempoAsustado <= 0) {
+        f.asustado = false;
+        f.color    = f.colorOriginal;
+      }
+    }
+  }
+
+  /* â”€â”€ Orquestador de fantasmas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /**
+   * Procesa todos los fantasmas en cada tick:
+   *  - Si aÃºn estÃ¡n en la caja (centrando/subiendo): animaciÃ³n de salida.
+   *  - Si ya estÃ¡n libres: movimiento de IA.
+   */
+  _procesarFantasmas() {
+    this.fantasmas.forEach((f, indice) => {
+      if (f.estadoSalida === 'libre') {
+        this._moverFantasmaLibre(f, indice);
+      } else if (
+        f.estadoSalida === 'centrando' ||
+        f.estadoSalida === 'subiendo'
+      ) {
+        /*
+         * La animaciÃ³n de salida se ejecuta cada 2 ticks
+         * para que se vea suave y no sea instantÃ¡nea.
+         */
+        if (this.tick % 2 === 0) {
+          this._procesarSalidaCaja(f);
+        }
+      }
+      /* 'esperando' â†’ no hace nada hasta que se active */
+    });
+  }
+
+  /* â”€â”€ Colisiones Pac-Man â†” Fantasmas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /**
+   * Detecta si algÃºn Pac-Man estÃ¡ en la misma celda que un fantasma.
+   * - Si el fantasma estÃ¡ asustado: Pac-Man lo come (200 pts) y
+   *   el fantasma vuelve a la caja.
+   * - Si no estÃ¡ asustado: Pac-Man pierde una vida.
+   */
+  _detectarColisiones() {
+    const pacmans = this.pacman2
+      ? [this.pacman1, this.pacman2]
+      : [this.pacman1];
+
+    for (const pm of pacmans) {
+      if (!pm.vivo) continue;
+
+      for (let i = 0; i < this.fantasmas.length; i++) {
+        const f = this.fantasmas[i];
+
+        /* Solo colisionar con fantasmas libres */
+        if (f.estadoSalida !== 'libre') continue;
+
+        if (f.col === pm.col && f.fila === pm.fila) {
+          if (pm.poderActivo && f.asustado) {
+            /* Pac-Man come al fantasma */
+            pm.puntaje += 200;
+            this._regresarFantasmaCaja(i);
+          } else {
+            /* Pac-Man pierde una vida */
+            pm.vidas--;
+            if (pm.vidas <= 0) {
+              pm.vivo = false;
+            } else {
+              pm.col  = pm.colRespawn;
+              pm.fila = pm.filaRespawn;
+              pm.direccion        = { dc: 0, df: 0 };
+              pm.proximaDireccion = { dc: 1, df: 0 };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Regresa un fantasma comido a su posiciÃ³n inicial dentro de la caja
+   * y reinicia su estado de salida (debe volver a esperar/salir).
+   * @param {number} indice - Ãndice del fantasma en this.fantasmas
+   */
+  _regresarFantasmaCaja(indice) {
+    const def = DEFINICION_FANTASMAS[indice];
+    const f   = this.fantasmas[indice];
+
+    f.col           = def.colInicio === PUERTA_COL ? CAJA_CENTRO_COL : def.colInicio;
+    f.fila          = def.filaInicio === PUERTA_FILA ? 10 : def.filaInicio;
+    f.asustado      = false;
+    f.color         = f.colorOriginal;
+    f.fueraDeCaja   = false;
+    f.estadoSalida  = 'centrando'; // vuelve a salir enseguida
+    f.direccion     = { dc: 0, df: 0 };
+    f.dirProhibida  = { dc: 0, df: 0 };
+  }
+
+  /* â”€â”€ Avanzar de nivel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /**
+   * Reinicia el tablero para el siguiente nivel.
+   * Aumenta la velocidad y reduce los umbrales de salida de los fantasmas.
+   */
+  _avanzarNivel() {
+    this.nivel++;
+    this.mapa          = clonarMapa();
+    this.puntosRestantes = this._contarPuntos();
+    this.puntosComidos  = 0;
+    this.ticksSinComer  = 0;
+
+    /* Reiniciar Pac-Men a su posiciÃ³n de respawn */
+    this.pacman1.col  = this.pacman1.colRespawn;
+    this.pacman1.fila = this.pacman1.filaRespawn;
+    this.pacman1.direccion        = { dc: 0, df: 0 };
+    this.pacman1.proximaDireccion = { dc: 1, df: 0 };
+    this.pacman1.poderActivo      = false;
+
+    if (this.pacman2) {
+      this.pacman2.col  = this.pacman2.colRespawn;
+      this.pacman2.fila = this.pacman2.filaRespawn;
+      this.pacman2.direccion        = { dc: 0, df: 0 };
+      this.pacman2.proximaDireccion = { dc: 1, df: 0 };
+      this.pacman2.poderActivo      = false;
+    }
+
+    /* Recrear fantasmas y ajustar umbrales al nuevo nivel */
+    this.fantasmas = DEFINICION_FANTASMAS.map(def => crearFantasma(def));
+    this._ajustarUmbrales();
+    this._iniciarSalidaInmediata();
+  }
+
+  /* â”€â”€ Renderizado â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /**
+   * Dibuja el estado completo del juego en el canvas:
+   * fondo, mapa (paredes, puntos, power-ups), fantasmas y Pac-Men.
+   */
+  renderizar() {
+    const ctx   = this.ctx;
+    const ancho = this.canvas.width;
+    const alto  = this.canvas.height;
+
+    /* Fondo negro */
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, ancho, alto);
+
+    /* Mapa */
+    for (let f = 0; f < FILAS; f++) {
+      for (let c = 0; c < COLUMNAS; c++) {
+        const celda = this.mapa[f][c];
+        const x     = c * CELDA;
+        const y     = f * CELDA;
+
+        if (celda === 1) {
+          /* Pared azul con borde oscuro */
+          ctx.fillStyle   = '#1a1aff';
+          ctx.fillRect(x, y, CELDA, CELDA);
+          ctx.strokeStyle = '#0000aa';
+          ctx.lineWidth   = 1;
+          ctx.strokeRect(x + 1, y + 1, CELDA - 2, CELDA - 2);
+
+        } else if (celda === 0) {
+          /* Punto pequeÃ±o */
+          ctx.fillStyle = '#ffddaa';
+          ctx.beginPath();
+          ctx.arc(x + CELDA / 2, y + CELDA / 2, 2, 0, Math.PI * 2);
+          ctx.fill();
+
+        } else if (celda === 3) {
+          /* Power-up parpadeante */
+          if (Math.floor(this.tick / 5) % 2 === 0) {
+            ctx.fillStyle    = '#ffffff';
+            ctx.shadowColor  = '#ffffff';
+            ctx.shadowBlur   = 8;
+            ctx.beginPath();
+            ctx.arc(x + CELDA / 2, y + CELDA / 2, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+        }
+        /* celdas 2 y 4 â†’ se dibujan vacÃ­as (fondo negro) */
+      }
+    }
+
+    /* Dibujar fantasmas (primero, debajo de Pac-Man) */
+    this.fantasmas.forEach(f => this._dibujarFantasma(ctx, f));
+
+    /* Dibujar Pac-Men */
+    this._dibujarPacman(ctx, this.pacman1);
+    if (this.pacman2) this._dibujarPacman(ctx, this.pacman2);
+  }
+
+  /* â”€â”€ Dibujo de personajes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /**
+   * Dibuja un Pac-Man con animaciÃ³n de apertura de boca.
+   * La boca apunta en la direcciÃ³n de movimiento.
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {Object} pm
+   */
+  _dibujarPacman(ctx, pm) {
+    if (!pm.vivo) return;
+
+    const x     = pm.col * CELDA + CELDA / 2;
+    const y     = pm.fila * CELDA + CELDA / 2;
+    const radio = CELDA / 2 - 1;
+
+    /* Ãngulo base segÃºn la direcciÃ³n actual */
+    let angBase = 0;
+    if      (pm.direccion.dc === -1) angBase = Math.PI;
+    else if (pm.direccion.df ===  1) angBase = Math.PI / 2;
+    else if (pm.direccion.df === -1) angBase = -Math.PI / 2;
+
+    const ap = pm.anguloApertura;
+
+    ctx.fillStyle   = pm.color;
+    ctx.shadowColor = pm.color;
+    ctx.shadowBlur  = 6;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.arc(x, y, radio, angBase + ap, angBase + Math.PI * 2 - ap);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  /**
+   * Dibuja un fantasma.
+   * - Color normal si estÃ¡ libre y no asustado.
+   * - Azul si estÃ¡ asustado.
+   * - Parpadeo blanco/azul cuando el poder estÃ¡ a punto de terminar.
+   * - Semitransparente mientras sale de la caja (centrando/subiendo).
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {Object} f
+   */
+  _dibujarFantasma(ctx, f) {
+    const x     = f.col  * CELDA;
+    const y     = f.fila * CELDA;
+    const radio = CELDA / 2 - 1;
+
+    /* Determinar color */
+    let colorRelleno;
+    if (f.asustado) {
+      const parpadeando = f.tiempoAsustado < 15 && Math.floor(this.tick / 3) % 2 === 0;
+      colorRelleno = parpadeando ? '#ffffff' : '#2222ff';
+    } else {
+      colorRelleno = f.color;
+    }
+
+    /* Opacidad reducida mientras estÃ¡ saliendo de la caja */
+    ctx.globalAlpha = (f.estadoSalida === 'libre') ? 1.0 : 0.6;
+
+    ctx.fillStyle   = colorRelleno;
+    ctx.shadowColor = colorRelleno;
+    ctx.shadowBlur  = 5;
+
+    /* Cuerpo: semicÃ­rculo superior */
+    ctx.beginPath();
+    ctx.arc(x + CELDA / 2, y + radio + 1, radio, Math.PI, 0);
+    ctx.lineTo(x + CELDA - 1, y + CELDA - 3);
+
+    /* FaldÃ³n ondulado en la parte inferior */
+    const numOndas  = 3;
+    const anchoOnda = (CELDA - 2) / numOndas;
+    for (let i = numOndas; i >= 0; i--) {
+      const xBase = x + 1 + i * anchoOnda - anchoOnda / 2;
+      ctx.arc(xBase, y + CELDA - 3, anchoOnda / 2, 0, Math.PI, i % 2 === 0);
+    }
+    ctx.lineTo(x + 1, y + radio + 1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    /* Ojos */
+    if (!f.asustado) {
+      /* Ojos blancos */
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(x + CELDA / 2 - 4, y + radio, 3, 0, Math.PI * 2);
+      ctx.arc(x + CELDA / 2 + 4, y + radio, 3, 0, Math.PI * 2);
+      ctx.fill();
+      /* Pupilas azul oscuro */
+      ctx.fillStyle = '#000088';
+      ctx.beginPath();
+      ctx.arc(x + CELDA / 2 - 3, y + radio, 1.5, 0, Math.PI * 2);
+      ctx.arc(x + CELDA / 2 + 5, y + radio, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      /* Ojos asustados */
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(x + CELDA / 2 - 3, y + radio, 2, 0, Math.PI * 2);
+      ctx.arc(x + CELDA / 2 + 3, y + radio, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    /* Restaurar opacidad */
+    ctx.globalAlpha = 1.0;
+  }
+}
+
+===== proyecto2\modules\main.js =====
+/**
+ * main.js â€” Proyecto Pac-Man
+ * MÃ³dulo principal: controles tÃ¡ctiles, overlays, vista expandida.
+ * La lÃ³gica del juego (juego.js) no se modifica.
+ */
+
+import {
+  mostrarElemento,
+  establecerTexto,
+  obtenerValor,
+  establecerValor,
+  toggleError,
+  actualizarMensajeEstado,
+  renderizarVidas,
+  renderizarListaJugadores,
+  descargarTxt
+} from "./dom.js";
+
+import { JuegoPacman } from "./juego.js";
+
+let juegoActual  = null;
+let modoActual   = "1jugador";
+let partidaActiva = false;
+const VIDAS_MAXIMAS = 3;
+
+/* ============================================================
+   CRUD
+   ============================================================ */
+
+async function obtenerJugadores() {
+  try { return await (await fetch("/api/jugadores")).json(); }
+  catch { return []; }
+}
+
+async function guardarJugador(jugador) {
+  try {
+    return await (await fetch("/api/jugadores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(jugador)
+    })).json();
+  } catch { return null; }
+}
+
+async function modificarJugador(id, datos) {
+  try {
+    return await (await fetch(`/api/jugadores/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(datos)
+    })).json();
+  } catch { return null; }
+}
+
+async function eliminarJugador(id) {
+  try {
+    const d = await (await fetch(`/api/jugadores/${id}`, { method: "DELETE" })).json();
+    return !!d.mensaje;
+  } catch { return false; }
+}
+
+/* ============================================================
+   INTERFAZ
+   ============================================================ */
+
+async function cargarYRenderizarJugadores() {
+  const jugadores = await obtenerJugadores();
+  renderizarListaJugadores(jugadores, abrirEdicion, manejarEliminar);
+}
+
+function abrirEdicion(jugador) {
+  establecerValor("editarId", jugador.id);
+  establecerValor("editarNombre", jugador.nombre);
+  establecerValor("editarPuntaje", jugador.puntaje);
+  establecerValor("editarModo", jugador.modo);
+  mostrarElemento("cardEditar", true);
+  document.getElementById("cardEditar").scrollIntoView({ behavior: "smooth" });
+}
+
+async function manejarEliminar(id) {
+  const ok = await eliminarJugador(id);
+  if (ok) {
+    actualizarMensajeEstado("Jugador eliminado correctamente.", "warning");
+    await cargarYRenderizarJugadores();
+  }
+}
+
+function validarNombre(v) { return v.length > 0 && v.length <= 20; }
+
+function toggleTema() {
+  const html  = document.documentElement;
+  const nuevo = html.getAttribute("data-tema") === "oscuro" ? "claro" : "oscuro";
+  html.setAttribute("data-tema", nuevo);
+  document.getElementById("btnTema").innerHTML = nuevo === "oscuro"
+    ? '<i class="bi bi-sun-fill"></i> Modo Claro'
+    : '<i class="bi bi-moon-fill"></i> Modo Oscuro';
+}
+
+/* ============================================================
+   GESTIÃ“N DE VISTAS
+   Mueve fÃ­sicamente el nodo <canvas> entre contenedores.
+   ============================================================ */
+
+/**
+ * Mueve el canvas al contenedor expandido y activa esa vista.
+ */
+function activarVistaExpandida() {
+  const canvas        = document.getElementById("canvasPacman");
+  const contenedorExp = document.getElementById("contenedorCanvasExpandido");
+
+  /* Mover fÃ­sicamente el nodo canvas */
+  if (canvas && contenedorExp) {
+    contenedorExp.appendChild(canvas);
+    canvas.classList.remove("canvas-config", "d-none");
+    canvas.classList.add("canvas-expandido");
+  }
+
+  ocultarTodosLosOverlays();
+
+  document.getElementById("vistaConfig").classList.add("d-none");
+  document.getElementById("vistaJuegoExpandido").classList.remove("d-none");
+
+  mostrarElemento("btnPausarExpandido", true);
+  mostrarElemento("btnReiniciarExpandido", true);
+  mostrarElemento("bloqueControlesJ2", modoActual === "2jugadores");
+
+  const bloqueJ2 = document.getElementById("marcadorBloqueJ2");
+  if (bloqueJ2) bloqueJ2.classList.toggle("d-none", modoActual !== "2jugadores");
+}
+
+/**
+ * Devuelve el canvas al contenedor config y activa esa vista.
+ */
+function volverAConfig() {
+  const canvas        = document.getElementById("canvasPacman");
+  const contenedorCfg = document.getElementById("contenedorCanvasConfig");
+
+  /* Mover fÃ­sicamente el nodo canvas de vuelta */
+  if (canvas && contenedorCfg) {
+    contenedorCfg.appendChild(canvas);
+    canvas.classList.remove("canvas-expandido");
+    canvas.classList.add("canvas-config");
+  }
+
+  if (juegoActual) { juegoActual.detener(); juegoActual = null; }
+  partidaActiva = false;
+
+  document.getElementById("vistaJuegoExpandido").classList.add("d-none");
+  document.getElementById("vistaConfig").classList.remove("d-none");
+
+  establecerTexto("puntajeJ1", "0");
+  establecerTexto("puntajeJ2", "0");
+  establecerTexto("nivelActual", "1");
+  mostrarElemento("mensajeGameOver", false);
+  mostrarElemento("btnIniciar", true);
+  mostrarElemento("btnPausar", false);
+  mostrarElemento("btnReiniciar", false);
+  actualizarMensajeEstado("ConfigurÃ¡ los jugadores e iniciÃ¡ la partida.", "info");
+}
+
+/* ============================================================
+   OVERLAYS
+   ============================================================ */
+
+function ocultarTodosLosOverlays() {
+  ["overlayPausa", "overlayGameOver", "overlayVictoria"].forEach(id => {
+    document.getElementById(id)?.classList.add("d-none");
+  });
+}
+
+function mostrarOverlay(id) {
+  ocultarTodosLosOverlays();
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove("d-none");
+  el.classList.add("overlay-entrando");
+  setTimeout(() => el.classList.remove("overlay-entrando"), 300);
+}
+
+function mostrarOverlayGameOver(p1, p2, nivel) {
+  let texto;
+  if (modoActual === "2jugadores") {
+    const nJ1 = obtenerValor("inputNombreJ1") || "J1";
+    const nJ2 = obtenerValor("inputNombreJ2") || "J2";
+    const g = p1 > p2 ? nJ1 : p2 > p1 ? nJ2 : "Â¡Empate!";
+    texto = g === "Â¡Empate!"
+      ? `Â¡Empate! ${nJ1}: ${p1} | ${nJ2}: ${p2}`
+      : `GanÃ³ ${g} â€” ${Math.max(p1, p2)} pts`;
+  } else {
+    texto = `Puntaje final: ${p1}`;
+  }
+  establecerTexto("overlayPuntajeFinal", texto);
+  establecerTexto("overlayNivelFinal", `Nivel alcanzado: ${nivel}`);
+  mostrarOverlay("overlayGameOver");
+}
+
+function mostrarOverlayVictoria(p1, p2, nivel) {
+  const texto = modoActual === "2jugadores"
+    ? `${obtenerValor("inputNombreJ1")||"J1"}: ${p1} | ${obtenerValor("inputNombreJ2")||"J2"}: ${p2}`
+    : `Puntaje: ${p1}`;
+  establecerTexto("overlayPuntajeVictoria", texto);
+  establecerTexto("overlayNivelVictoria", `Nivel: ${nivel}`);
+  mostrarOverlay("overlayVictoria");
+}
+
+/* ============================================================
+   CONTROLES TÃCTILES
+   Reutilizan moverJ1/moverJ2 del juego, igual que el teclado.
+   ============================================================ */
+
+const MAPA_TACTIL = {
+  arriba:    { dc: 0,  df: -1 },
+  abajo:     { dc: 0,  df:  1 },
+  izquierda: { dc: -1, df:  0 },
+  derecha:   { dc: 1,  df:  0 }
+};
+
+function registrarBotonTactil(idBoton, jugador, dir) {
+  const btn = document.getElementById(idBoton);
+  if (!btn) return;
+  const handler = (e) => {
+    e.preventDefault();
+    if (!juegoActual || !partidaActiva) return;
+    const direccion = MAPA_TACTIL[dir];
+    if (!direccion) return;
+    if (jugador === 1) juegoActual.moverJ1(direccion);
+    else if (jugador === 2) juegoActual.moverJ2(direccion);
+  };
+  btn.addEventListener("mousedown", handler);
+  btn.addEventListener("touchstart", handler, { passive: false });
+}
+
+function inicializarControlesTactiles() {
+  ["Arriba","Abajo","Izquierda","Derecha"].forEach(d => {
+    registrarBotonTactil(`j1${d}`, 1, d.toLowerCase());
+    registrarBotonTactil(`j2${d}`, 2, d.toLowerCase());
+  });
+}
+
+/* ============================================================
+   MARCADOR EXPANDIDO
+   ============================================================ */
+
+function actualizarMarcadorExpandido(p1, p2, v1, v2, nivel) {
+  establecerTexto("marcadorPuntajeJ1", p1);
+  establecerTexto("marcadorNivel", nivel);
+  renderizarVidas("marcadorVidasJ1", v1, VIDAS_MAXIMAS);
+  if (modoActual === "2jugadores") {
+    establecerTexto("marcadorPuntajeJ2", p2);
+    renderizarVidas("marcadorVidasJ2", v2, VIDAS_MAXIMAS);
+  }
+}
+
+/* ============================================================
+   EVENTOS
+   ============================================================ */
+
+function inicializarEventos() {
+
+  document.getElementById("selectModo").addEventListener("change", (e) => {
+    modoActual = e.target.value;
+    const es2J = modoActual === "2jugadores";
+    mostrarElemento("contenedorJ2", es2J);
+    mostrarElemento("controlesJ2Info", es2J);
+    mostrarElemento("bloqueJ2Estado", es2J);
+  });
+
+  document.getElementById("inputNombreJ1").addEventListener("blur", (e) => {
+    toggleError("errorNombreJ1", !validarNombre(e.target.value.trim()));
+  });
+
+  document.getElementById("inputNombreJ2").addEventListener("blur", (e) => {
+    if (modoActual !== "2jugadores") return;
+    toggleError("errorNombreJ2", !validarNombre(e.target.value.trim()));
+  });
+
+  /* â”€â”€ FunciÃ³n de inicio (reutilizable desde overlays) â”€â”€ */
+  function iniciarJuego() {
+    const nombreJ1 = obtenerValor("inputNombreJ1");
+    if (!validarNombre(nombreJ1)) {
+      toggleError("errorNombreJ1", true);
+      actualizarMensajeEstado("IngresÃ¡ un nombre vÃ¡lido para el Jugador 1.", "danger");
+      return;
+    }
+    toggleError("errorNombreJ1", false);
+
+    if (modoActual === "2jugadores") {
+      const nJ2 = obtenerValor("inputNombreJ2");
+      if (!validarNombre(nJ2)) {
+        toggleError("errorNombreJ2", true);
+        actualizarMensajeEstado("IngresÃ¡ un nombre vÃ¡lido para el Jugador 2.", "danger");
+        return;
+      }
+      toggleError("errorNombreJ2", false);
+    }
+
+    if (juegoActual) juegoActual.detener();
+    ocultarTodosLosOverlays();
+
+    /* Canvas: puede estar en cualquier contenedor; lo referenciamos por ID */
+    const canvas = document.getElementById("canvasPacman");
+
+    const nJ1 = obtenerValor("inputNombreJ1") || "Jugador 1";
+    const nJ2 = modoActual === "2jugadores"
+      ? (obtenerValor("inputNombreJ2") || "Jugador 2") : "Jugador 2";
+
+    establecerTexto("marcadorNombreJ1", nJ1);
+    establecerTexto("marcadorNombreJ2", nJ2);
+    establecerTexto("tituloControlesJ1", nJ1);
+    establecerTexto("tituloControlesJ2", nJ2);
+    establecerTexto("labelJ1", nJ1);
+    if (modoActual === "2jugadores") establecerTexto("labelJ2", nJ2);
+
+    juegoActual = new JuegoPacman(canvas, {
+      modo: modoActual,
+
+      onPuntaje: (p1, p2, v1, v2, nivel) => {
+        establecerTexto("puntajeJ1", p1);
+        establecerTexto("nivelActual", nivel);
+        renderizarVidas("vidasJ1Container", v1, VIDAS_MAXIMAS);
+        if (modoActual === "2jugadores") {
+          establecerTexto("puntajeJ2", p2);
+          renderizarVidas("vidasJ2Container", v2, VIDAS_MAXIMAS);
+        }
+        actualizarMarcadorExpandido(p1, p2, v1, v2, nivel);
+      },
+
+      onFinJuego: async (p1, p2, nivel) => {
+        await guardarJugador({
+          nombre: obtenerValor("inputNombreJ1"),
+          puntaje: p1, modo: modoActual, nivel
+        });
+        if (modoActual === "2jugadores") {
+          await guardarJugador({
+            nombre: obtenerValor("inputNombreJ2"),
+            puntaje: p2, modo: modoActual, nivel
+          });
+        }
+
+        mostrarOverlayGameOver(p1, p2, nivel);
+
+        mostrarElemento("btnIniciar", true);
+        mostrarElemento("btnPausar", false);
+        mostrarElemento("btnReiniciar", true);
+        mostrarElemento("btnPausarExpandido", false);
+        partidaActiva = false;
+
+        actualizarMensajeEstado("Partida finalizada. Â¡PodÃ©s volver a jugar!", "warning");
+        await cargarYRenderizarJugadores();
+      }
+    });
+
+    juegoActual.iniciar();
+    partidaActiva = true;
+
+    establecerTexto("puntajeJ1", "0");
+    establecerTexto("puntajeJ2", "0");
+    establecerTexto("nivelActual", "1");
+    establecerTexto("marcadorPuntajeJ1", "0");
+    establecerTexto("marcadorPuntajeJ2", "0");
+    establecerTexto("marcadorNivel", "1");
+    renderizarVidas("vidasJ1Container",  VIDAS_MAXIMAS, VIDAS_MAXIMAS);
+    renderizarVidas("marcadorVidasJ1",   VIDAS_MAXIMAS, VIDAS_MAXIMAS);
+    if (modoActual === "2jugadores") {
+      renderizarVidas("vidasJ2Container", VIDAS_MAXIMAS, VIDAS_MAXIMAS);
+      renderizarVidas("marcadorVidasJ2",  VIDAS_MAXIMAS, VIDAS_MAXIMAS);
+    }
+
+    mostrarElemento("mensajeGameOver", false);
+    mostrarElemento("btnIniciar", false);
+    mostrarElemento("btnPausar", true);
+    mostrarElemento("btnReiniciar", true);
+    actualizarMensajeEstado("Â¡Juego en curso! UsÃ¡ las flechas para moverte.", "success");
+
+    /* MUEVE el canvas fÃ­sicamente a la vista expandida */
+    activarVistaExpandida();
+  }
+
+  document.getElementById("btnIniciar").addEventListener("click", iniciarJuego);
+
+  /* â”€â”€ PAUSAR / REANUDAR â”€â”€ */
+  const manejarPausa = () => {
+    if (!juegoActual) return;
+    const pausado = juegoActual.togglePausa();
+    const btnP  = document.getElementById("btnPausar");
+    const btnPE = document.getElementById("btnPausarExpandido");
+    if (pausado) {
+      if (btnP)  btnP.innerHTML  = '<i class="bi bi-play-fill me-1"></i>Reanudar';
+      if (btnPE) btnPE.innerHTML = '<i class="bi bi-play-fill"></i> Reanudar';
+      actualizarMensajeEstado("Juego pausado.", "warning");
+      mostrarOverlay("overlayPausa");
+    } else {
+      if (btnP)  btnP.innerHTML  = '<i class="bi bi-pause-fill me-1"></i>Pausar';
+      if (btnPE) btnPE.innerHTML = '<i class="bi bi-pause-fill"></i> Pausar';
+      actualizarMensajeEstado("Â¡Juego en curso!", "success");
+      ocultarTodosLosOverlays();
+    }
+  };
+  document.getElementById("btnPausar").addEventListener("click", manejarPausa);
+  document.getElementById("btnPausarExpandido").addEventListener("click", manejarPausa);
+
+  /* â”€â”€ REINICIAR â”€â”€ */
+  const manejarReiniciar = () => {
+    if (juegoActual) juegoActual.detener();
+    juegoActual   = null;
+    partidaActiva = false;
+    establecerTexto("puntajeJ1", "0");
+    establecerTexto("puntajeJ2", "0");
+    establecerTexto("nivelActual", "1");
+    mostrarElemento("mensajeGameOver", false);
+    mostrarElemento("btnIniciar", true);
+    mostrarElemento("btnPausar", false);
+    mostrarElemento("btnReiniciar", false);
+    actualizarMensajeEstado("ConfigurÃ¡ los jugadores e iniciÃ¡ la partida.", "info");
+    volverAConfig();
+  };
+  document.getElementById("btnReiniciar").addEventListener("click", manejarReiniciar);
+  document.getElementById("btnReiniciarExpandido").addEventListener("click", manejarReiniciar);
+
+  /* â”€â”€ VOLVER A CONFIG â”€â”€ */
+  document.getElementById("btnVolverConfig").addEventListener("click", volverAConfig);
+
+  /* â”€â”€ OVERLAY PAUSA â”€â”€ */
+  document.getElementById("btnContinuarOverlay").addEventListener("click", () => {
+    if (!juegoActual) return;
+    const pausado = juegoActual.togglePausa();
+    if (!pausado) {
+      ocultarTodosLosOverlays();
+      const btnPE = document.getElementById("btnPausarExpandido");
+      if (btnPE) btnPE.innerHTML = '<i class="bi bi-pause-fill"></i> Pausar';
+      actualizarMensajeEstado("Â¡Juego en curso!", "success");
+    }
+  });
+  document.getElementById("btnReiniciarOverlay").addEventListener("click", manejarReiniciar);
+  document.getElementById("btnMenuOverlay").addEventListener("click", volverAConfig);
+
+  /* â”€â”€ OVERLAY GAME OVER â”€â”€ */
+  document.getElementById("btnJugarOtraVezOverlay").addEventListener("click", () => {
+    ocultarTodosLosOverlays();
+    volverAConfig();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  document.getElementById("btnMenuGameOverOverlay").addEventListener("click", volverAConfig);
+
+  /* â”€â”€ OVERLAY VICTORIA â”€â”€ */
+  document.getElementById("btnJugarOtraVezVictoria").addEventListener("click", () => {
+    ocultarTodosLosOverlays();
+    volverAConfig();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  document.getElementById("btnMenuVictoriaOverlay").addEventListener("click", volverAConfig);
+
+  /* â”€â”€ TECLADO â”€â”€ */
+  document.addEventListener("keydown", (e) => {
+    if (!juegoActual || !partidaActiva) return;
+    const mapaJ1 = {
+      ArrowUp: {dc:0,df:-1}, ArrowDown: {dc:0,df:1},
+      ArrowLeft: {dc:-1,df:0}, ArrowRight: {dc:1,df:0}
+    };
+    const mapaJ2 = {
+      w:{dc:0,df:-1}, s:{dc:0,df:1}, a:{dc:-1,df:0}, d:{dc:1,df:0}
+    };
+    if (mapaJ1[e.key]) { e.preventDefault(); juegoActual.moverJ1(mapaJ1[e.key]); }
+    if (modoActual === "2jugadores" && mapaJ2[e.key]) juegoActual.moverJ2(mapaJ2[e.key]);
+  });
+
+  /* â”€â”€ GUARDAR EDICIÃ“N â”€â”€ */
+  document.getElementById("btnGuardarEdicion").addEventListener("click", async () => {
+    const id      = obtenerValor("editarId");
+    const nombre  = obtenerValor("editarNombre");
+    const puntaje = parseInt(obtenerValor("editarPuntaje"), 10);
+    const modo    = document.getElementById("editarModo").value;
+    if (!validarNombre(nombre)) {
+      actualizarMensajeEstado("El nombre editado no es vÃ¡lido.", "danger");
+      return;
+    }
+    await modificarJugador(id, { nombre, puntaje, modo });
+    mostrarElemento("cardEditar", false);
+    actualizarMensajeEstado("Jugador actualizado correctamente.", "success");
+    await cargarYRenderizarJugadores();
+  });
+
+  document.getElementById("btnCancelarEdicion").addEventListener("click", () => {
+    mostrarElemento("cardEditar", false);
+  });
+
+  /* â”€â”€ DESCARGAR TXT â”€â”€ */
+  document.getElementById("btnDescargarTxt").addEventListener("click", async () => {
+    const jugadores = await obtenerJugadores();
+    const lineas = jugadores
+      .sort((a, b) => b.puntaje - a.puntaje)
+      .map((j, i) =>
+        `${i+1}. ${j.nombre} | Puntaje: ${j.puntaje} | Nivel: ${j.nivel} | Modo: ${j.modo} | Fecha: ${j.fecha}`
+      ).join("\n");
+    descargarTxt(
+      `RANKING PAC-MAN\n${"=".repeat(40)}\n${lineas}\n${"=".repeat(40)}\nTotal: ${jugadores.length}`,
+      "ranking_pacman.txt"
+    );
+  });
+
+  /* â”€â”€ TOGGLE TEMA â”€â”€ */
+  document.getElementById("btnTema").addEventListener("click", toggleTema);
+
+  /* â”€â”€ CONTROLES TÃCTILES â”€â”€ */
+  inicializarControlesTactiles();
+}
+
+/* ============================================================
+   INICIO
+   ============================================================ */
+
+document.addEventListener("DOMContentLoaded", async () => {
+  await cargarYRenderizarJugadores();
+  inicializarEventos();
+});
+
+===== proyecto2\package.json =====
+{
+  "name": "proyecto2-pacman",
+  "version": "1.0.0",
+  "description": "Juego Pac-Man con modo 2 jugadores y persistencia de puntajes",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
+
+===== proyecto2\pages\index.html =====
+<!DOCTYPE html>
+<html lang="es" data-tema="oscuro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pac-Man - Juego</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+  <link rel="stylesheet" href="../style/estilos.css" />
+</head>
+<body>
+
+  <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+       NAVBAR
+  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <nav class="navbar navbar-expand-lg" id="barraNav">
+    <div class="container-fluid">
+      <span class="navbar-brand fw-bold fs-4">
+        <i class="bi bi-circle-fill text-warning me-1"></i> Pac-Man
+      </span>
+      <button class="navbar-toggler" type="button"
+        data-bs-toggle="collapse" data-bs-target="#menuNav"
+        aria-controls="menuNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="menuNav">
+        <ul class="navbar-nav ms-auto align-items-center gap-2">
+          <li class="nav-item"><a class="nav-link" href="#seccionJuego">Juego</a></li>
+          <li class="nav-item"><a class="nav-link" href="#seccionPuntajes">Ranking</a></li>
+          <li class="nav-item">
+            <button class="btn btn-outline-secondary btn-sm" id="btnTema">
+              <i class="bi bi-sun-fill"></i> Modo Claro
+            </button>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+       VISTA CONFIGURACIÃ“N (pantalla inicial)
+  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <div class="container-fluid mt-3 px-3" id="vistaConfig">
+    <div class="row g-3">
+
+      <!-- Panel izquierdo: configuraciÃ³n -->
+      <div class="col-12 col-lg-3">
+
+        <div class="card card-glass mb-3" id="cardConfig">
+          <div class="card-header fw-bold">
+            <i class="bi bi-gear-fill me-2"></i>ConfiguraciÃ³n
+          </div>
+          <div class="card-body">
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Modo de juego</label>
+              <select class="form-select" id="selectModo">
+                <option value="1jugador">1 Jugador</option>
+                <option value="2jugadores">2 Jugadores</option>
+              </select>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label">Nombre Jugador 1</label>
+              <input type="text" class="form-control" id="inputNombreJ1"
+                placeholder="Jugador 1" maxlength="20" />
+              <div class="text-danger small mt-1 d-none" id="errorNombreJ1">
+                IngresÃ¡ un nombre vÃ¡lido.
+              </div>
+            </div>
+
+            <div class="mb-3 d-none" id="contenedorJ2">
+              <label class="form-label">Nombre Jugador 2</label>
+              <input type="text" class="form-control" id="inputNombreJ2"
+                placeholder="Jugador 2" maxlength="20" />
+              <div class="text-danger small mt-1 d-none" id="errorNombreJ2">
+                IngresÃ¡ un nombre vÃ¡lido.
+              </div>
+              <small class="text-muted">Jugador 2 usa: W A S D</small>
+            </div>
+
+            <button class="btn btn-pacman w-100 fw-bold" id="btnIniciar">
+              <i class="bi bi-play-fill me-1"></i>Iniciar Juego
+            </button>
+            <button class="btn btn-outline-warning w-100 mt-2 d-none" id="btnPausar">
+              <i class="bi bi-pause-fill me-1"></i>Pausar
+            </button>
+            <button class="btn btn-outline-danger w-100 mt-2 d-none" id="btnReiniciar">
+              <i class="bi bi-arrow-counterclockwise me-1"></i>Reiniciar
+            </button>
+          </div>
+        </div>
+
+        <!-- Controles teclado -->
+        <div class="card card-glass mb-3">
+          <div class="card-header fw-bold">
+            <i class="bi bi-keyboard me-2"></i>Controles
+          </div>
+          <div class="card-body small">
+            <p class="fw-semibold mb-1 text-warning">Jugador 1:</p>
+            <p class="mb-1">â†‘ â†“ â† â†’ (flechas)</p>
+            <div id="controlesJ2Info" class="d-none">
+              <p class="fw-semibold mb-1 mt-2 text-info">Jugador 2:</p>
+              <p class="mb-0">W (arriba) S (abajo) A (izq) D (der)</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Estado del juego: puntaje + vidas + nivel -->
+        <div class="card card-glass" id="cardEstadoJuego">
+          <div class="card-header fw-bold">
+            <i class="bi bi-heart-fill text-danger me-2"></i>Estado del Juego
+          </div>
+          <div class="card-body">
+            <div class="mb-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <span id="labelJ1" class="fw-semibold">Jugador 1</span>
+                <span class="badge badge-puntaje" id="puntajeJ1">0</span>
+              </div>
+              <div class="d-flex gap-1 mt-1" id="vidasJ1Container"></div>
+            </div>
+            <div class="mb-1 d-none" id="bloqueJ2Estado">
+              <div class="d-flex justify-content-between align-items-center">
+                <span id="labelJ2" class="fw-semibold">Jugador 2</span>
+                <span class="badge badge-puntaje-j2" id="puntajeJ2">0</span>
+              </div>
+              <div class="d-flex gap-1 mt-1" id="vidasJ2Container"></div>
+            </div>
+            <div class="mt-2 nivel-badge-container">
+              <span class="nivel-badge">
+                <i class="bi bi-star-fill me-1"></i>Nivel: <strong id="nivelActual">1</strong>
+              </span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Panel central: canvas -->
+      <div class="col-12 col-lg-6" id="seccionJuego">
+        <div class="card card-glass h-100" id="cardJuego">
+          <div class="card-header fw-bold text-center">
+            <i class="bi bi-joystick me-2"></i>Tablero de Juego
+          </div>
+          <div class="card-body d-flex flex-column align-items-center p-2">
+            <div class="alert alert-info w-100 text-center mb-2" id="mensajeEstado">
+              ConfigurÃ¡ los jugadores e iniciÃ¡ la partida.
+            </div>
+            <!-- Canvas principal (vive aquÃ­ al inicio) -->
+            <div id="contenedorCanvasConfig">
+                <canvas
+                    id="canvasPacman"
+                    width="420"
+                    height="441"
+                    class="canvas-config border rounded">
+                </canvas>
+            </div>
+            <div class="alert alert-danger w-100 text-center mt-2 d-none"
+              id="mensajeGameOver"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel derecho: ranking y ediciÃ³n -->
+      <div class="col-12 col-lg-3" id="seccionPuntajes">
+
+        <div class="card card-glass mb-3 d-none" id="cardEditar">
+          <div class="card-header fw-bold">
+            <i class="bi bi-pencil-fill me-2"></i>Editar Jugador
+          </div>
+          <div class="card-body">
+            <input type="hidden" id="editarId" />
+            <div class="mb-2">
+              <label class="form-label">Nombre</label>
+              <input type="text" class="form-control" id="editarNombre" />
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Puntaje</label>
+              <input type="number" class="form-control" id="editarPuntaje" min="0" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Modo</label>
+              <select class="form-select" id="editarModo">
+                <option value="1jugador">1 Jugador</option>
+                <option value="2jugadores">2 Jugadores</option>
+              </select>
+            </div>
+            <button class="btn btn-primary w-100 mb-2" id="btnGuardarEdicion">
+              <i class="bi bi-check-lg me-1"></i>Guardar cambios
+            </button>
+            <button class="btn btn-secondary w-100" id="btnCancelarEdicion">Cancelar</button>
+          </div>
+        </div>
+
+        <div class="card card-glass" id="cardPuntajes">
+          <div class="card-header d-flex justify-content-between align-items-center fw-bold">
+            <span><i class="bi bi-list-ol me-2"></i>Ranking</span>
+            <div class="d-flex gap-2">
+              <button class="btn btn-outline-success btn-sm" id="btnDescargarTxt">
+                <i class="bi bi-download"></i>
+              </button>
+              <span class="badge bg-secondary" id="contadorJugadores">0</span>
+            </div>
+          </div>
+          <div class="card-body p-2">
+            <p class="text-center text-muted small" id="mensajeSinJugadores">
+              AÃºn no hay puntajes guardados.
+            </p>
+            <ul class="list-group list-group-flush" id="listaJugadores"></ul>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+       VISTA JUEGO EXPANDIDO
+  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+  <div id="vistaJuegoExpandido" class="d-none vista-expandida">
+    <div class="container-fluid px-2 px-md-3 mt-2">
+
+      <!-- Barra de estado superior -->
+      <div class="row g-2 mb-2">
+        <div class="col-12">
+          <div class="card card-glass marcador-expandido">
+            <div class="card-body py-2 px-3">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+
+                <!-- Jugador 1 -->
+                <div class="marcador-bloque">
+                  <div class="marcador-avatar marcador-avatar-j1">
+                    <i class="bi bi-circle-fill"></i>
+                  </div>
+                  <div>
+                    <div class="marcador-nombre" id="marcadorNombreJ1">Jugador 1</div>
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="badge badge-puntaje" id="marcadorPuntajeJ1">0</span>
+                      <div class="d-flex gap-1" id="marcadorVidasJ1"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Centro: nivel -->
+                <div class="d-flex gap-3 align-items-center">
+                  <div class="text-center">
+                    <div class="marcador-stat-label">Nivel</div>
+                    <div class="marcador-stat-valor" id="marcadorNivel">1</div>
+                  </div>
+
+                  <!-- Jugador 2 (solo visible en 2 jugadores) -->
+                  <div class="text-center d-none" id="marcadorBloqueJ2">
+                    <div class="marcador-nombre" id="marcadorNombreJ2">Jugador 2</div>
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="badge badge-puntaje-j2" id="marcadorPuntajeJ2">0</span>
+                      <div class="d-flex gap-1" id="marcadorVidasJ2"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Botones -->
+                <div class="d-flex gap-2 flex-wrap">
+                  <button class="btn btn-sm btn-outline-warning d-none" id="btnPausarExpandido">
+                    <i class="bi bi-pause-fill"></i> Pausar
+                  </button>
+                  <button class="btn btn-sm btn-outline-danger d-none" id="btnReiniciarExpandido">
+                    <i class="bi bi-arrow-counterclockwise"></i> Reiniciar
+                  </button>
+                  <button class="btn btn-sm btn-outline-secondary" id="btnVolverConfig">
+                    <i class="bi bi-x-lg"></i> Salir
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Canvas expandido + overlays -->
+      <div class="row g-2 mb-2">
+        <div class="col-12 d-flex justify-content-center">
+          <div class="canvas-wrapper position-relative">
+
+            <div id="contenedorCanvasExpandido"class="d-flex justify-content-center w-100">
+            </div>
+
+            <!-- â”€â”€ OVERLAY PAUSA â”€â”€ -->
+            <div id="overlayPausa" class="overlay-juego d-none">
+              <div class="overlay-contenido">
+                <div class="overlay-icono">â¸</div>
+                <h2 class="overlay-titulo">PAUSA</h2>
+                <div class="d-flex flex-column gap-2 w-100 mt-3">
+                  <button class="btn btn-overlay-primary" id="btnContinuarOverlay">
+                    <i class="bi bi-play-fill me-2"></i>Continuar
+                  </button>
+                  <button class="btn btn-overlay-secondary" id="btnReiniciarOverlay">
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>Reiniciar
+                  </button>
+                  <button class="btn btn-overlay-ghost" id="btnMenuOverlay">
+                    <i class="bi bi-house-fill me-2"></i>MenÃº Principal
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- â”€â”€ OVERLAY GAME OVER â”€â”€ -->
+            <div id="overlayGameOver" class="overlay-juego d-none">
+              <div class="overlay-contenido overlay-gameover">
+                <div class="overlay-icono">ðŸ’€</div>
+                <h2 class="overlay-titulo overlay-titulo-danger">GAME OVER</h2>
+                <div class="overlay-puntaje-final" id="overlayPuntajeFinal">
+                  Puntaje: 0
+                </div>
+                <div class="overlay-nivel-final" id="overlayNivelFinal">
+                  Nivel alcanzado: 1
+                </div>
+                <div class="d-flex flex-column gap-2 w-100 mt-3">
+                  <button class="btn btn-overlay-primary" id="btnJugarOtraVezOverlay">
+                    <i class="bi bi-play-fill me-2"></i>Jugar Otra Vez
+                  </button>
+                  <button class="btn btn-overlay-ghost" id="btnMenuGameOverOverlay">
+                    <i class="bi bi-house-fill me-2"></i>Volver al MenÃº
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- â”€â”€ OVERLAY VICTORIA â”€â”€ -->
+            <div id="overlayVictoria" class="overlay-juego d-none">
+              <div class="overlay-contenido overlay-victoria">
+                <div class="overlay-icono">ðŸ†</div>
+                <h2 class="overlay-titulo overlay-titulo-victory">Â¡GANASTE!</h2>
+                <div class="overlay-puntaje-final" id="overlayPuntajeVictoria">
+                  Puntaje: 0
+                </div>
+                <div class="overlay-nivel-final" id="overlayNivelVictoria">
+                  Nivel: 1
+                </div>
+                <div class="d-flex flex-column gap-2 w-100 mt-3">
+                  <button class="btn btn-overlay-primary" id="btnJugarOtraVezVictoria">
+                    <i class="bi bi-play-fill me-2"></i>Jugar Otra Vez
+                  </button>
+                  <button class="btn btn-overlay-ghost" id="btnMenuVictoriaOverlay">
+                    <i class="bi bi-house-fill me-2"></i>Volver al MenÃº
+                  </button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Controles tÃ¡ctiles -->
+      <div class="row g-2 mb-3" id="filaControlesTactiles">
+
+        <!-- Jugador 1 -->
+        <div class="col-6" id="bloqueControlesJ1">
+          <div class="card card-glass controles-card">
+            <div class="card-body p-2 text-center">
+              <div class="controles-titulo mb-2" id="tituloControlesJ1">Jugador 1</div>
+              <div class="pad-direccional">
+                <div class="pad-fila">
+                  <div class="pad-espacio"></div>
+                  <button class="btn-pad btn-pad-j1" id="j1Arriba"
+                    data-jugador="1" data-dir="arriba">
+                    <i class="bi bi-caret-up-fill"></i>
+                  </button>
+                  <div class="pad-espacio"></div>
+                </div>
+                <div class="pad-fila">
+                  <button class="btn-pad btn-pad-j1" id="j1Izquierda"
+                    data-jugador="1" data-dir="izquierda">
+                    <i class="bi bi-caret-left-fill"></i>
+                  </button>
+                  <div class="pad-centro pad-centro-j1">â—</div>
+                  <button class="btn-pad btn-pad-j1" id="j1Derecha"
+                    data-jugador="1" data-dir="derecha">
+                    <i class="bi bi-caret-right-fill"></i>
+                  </button>
+                </div>
+                <div class="pad-fila">
+                  <div class="pad-espacio"></div>
+                  <button class="btn-pad btn-pad-j1" id="j1Abajo"
+                    data-jugador="1" data-dir="abajo">
+                    <i class="bi bi-caret-down-fill"></i>
+                  </button>
+                  <div class="pad-espacio"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Jugador 2 (oculto por defecto) -->
+        <div class="col-6 d-none" id="bloqueControlesJ2">
+          <div class="card card-glass controles-card">
+            <div class="card-body p-2 text-center">
+              <div class="controles-titulo mb-2 controles-titulo-j2" id="tituloControlesJ2">Jugador 2</div>
+              <div class="pad-direccional">
+                <div class="pad-fila">
+                  <div class="pad-espacio"></div>
+                  <button class="btn-pad btn-pad-j2" id="j2Arriba"
+                    data-jugador="2" data-dir="arriba">
+                    <i class="bi bi-caret-up-fill"></i>
+                  </button>
+                  <div class="pad-espacio"></div>
+                </div>
+                <div class="pad-fila">
+                  <button class="btn-pad btn-pad-j2" id="j2Izquierda"
+                    data-jugador="2" data-dir="izquierda">
+                    <i class="bi bi-caret-left-fill"></i>
+                  </button>
+                  <div class="pad-centro pad-centro-j2">â—</div>
+                  <button class="btn-pad btn-pad-j2" id="j2Derecha"
+                    data-jugador="2" data-dir="derecha">
+                    <i class="bi bi-caret-right-fill"></i>
+                  </button>
+                </div>
+                <div class="pad-fila">
+                  <div class="pad-espacio"></div>
+                  <button class="btn-pad btn-pad-j2" id="j2Abajo"
+                    data-jugador="2" data-dir="abajo">
+                    <i class="bi bi-caret-down-fill"></i>
+                  </button>
+                  <div class="pad-espacio"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+  <!-- fin vistaJuegoExpandido -->
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script type="module" src="../modules/main.js"></script>
+</body>
+</html>
+
+===== proyecto2\routes\jugadores.js =====
+/**
+ * Rutas Express para CRUD completo de jugadores del juego Pac-Man.
+ * Persiste los datos en /data/jugadores.txt usando fs (ES Modules).
+ */
+
+import express from "express";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const router = express.Router();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const rutaArchivo = path.join(__dirname, "../data/jugadores.txt");
+
+/**
+ * Asegura que el directorio /data y el archivo .txt existan.
+ */
+function asegurarArchivo() {
+  const dir = path.join(__dirname, "../data");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  if (!fs.existsSync(rutaArchivo)) {
+    fs.writeFileSync(rutaArchivo, JSON.stringify([]), "utf-8");
+  }
+}
+
+/**
+ * Lee y parsea la lista de jugadores desde el archivo .txt.
+ * @returns {Array}
+ */
+function leerJugadores() {
+  asegurarArchivo();
+  try {
+    return JSON.parse(fs.readFileSync(rutaArchivo, "utf-8"));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Escribe la lista de jugadores en el archivo .txt.
+ * @param {Array} jugadores
+ */
+function escribirJugadores(jugadores) {
+  asegurarArchivo();
+  fs.writeFileSync(rutaArchivo, JSON.stringify(jugadores, null, 2), "utf-8");
+}
+
+/* GET: obtener todos los jugadores */
+router.get("/", (req, res) => {
+  res.json(leerJugadores());
+});
+
+/* GET: descargar archivo .txt */
+router.get("/archivo", (req, res) => {
+  asegurarArchivo();
+  res.download(rutaArchivo, "jugadores_pacman.txt");
+});
+
+/**
+ * POST: agregar jugador nuevo.
+ * Recibe: { nombre, puntaje, modo, nivel }
+ */
+router.post("/", (req, res) => {
+  const { nombre, puntaje, modo, nivel } = req.body;
+  if (!nombre || puntaje === undefined || !modo) {
+    return res.status(400).json({ error: "Datos incompletos" });
+  }
+
+  const jugadores = leerJugadores();
+  const nuevoJugador = {
+    id: Date.now().toString(),
+    nombre: nombre.trim(),
+    puntaje: Number(puntaje),
+    modo,
+    nivel: nivel || 1,
+    fecha: new Date().toLocaleDateString("es-AR")
+  };
+
+  jugadores.push(nuevoJugador);
+  escribirJugadores(jugadores);
+  res.status(201).json(nuevoJugador);
+});
+
+/**
+ * PUT: modificar jugador por ID.
+ */
+router.put("/:id", (req, res) => {
+  const { id } = req.params;
+  const { nombre, puntaje, modo } = req.body;
+  const jugadores = leerJugadores();
+  const idx = jugadores.findIndex((j) => j.id === id);
+
+  if (idx === -1) return res.status(404).json({ error: "No encontrado" });
+
+  if (nombre !== undefined) jugadores[idx].nombre = nombre.trim();
+  if (puntaje !== undefined) jugadores[idx].puntaje = Number(puntaje);
+  if (modo !== undefined) jugadores[idx].modo = modo;
+
+  escribirJugadores(jugadores);
+  res.json(jugadores[idx]);
+});
+
+/**
+ * DELETE: eliminar jugador por ID.
+ */
+router.delete("/:id", (req, res) => {
+  const { id } = req.params;
+  const jugadores = leerJugadores();
+  const nueva = jugadores.filter((j) => j.id !== id);
+
+  if (nueva.length === jugadores.length) {
+    return res.status(404).json({ error: "No encontrado" });
+  }
+
+  escribirJugadores(nueva);
+  res.json({ mensaje: "Jugador eliminado correctamente" });
+});
+
+export default router;
+
+===== proyecto2\server.js =====
+/**
+ * Servidor principal del proyecto Pac-Man.
+ * Utiliza Express con ES Modules.
+ * Sirve archivos estÃ¡ticos y expone rutas CRUD para jugadores.
+ */
+
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+import jugadoresRouter from "./routes/jugadores.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PUERTO = 3002;
+
+app.use(express.json());
+
+app.use("/pages", express.static(path.join(__dirname, "pages")));
+app.use("/style", express.static(path.join(__dirname, "style")));
+app.use("/modules", express.static(path.join(__dirname, "modules")));
+
+app.use("/api/jugadores", jugadoresRouter);
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "pages", "index.html"));
+});
+
+app.listen(PUERTO, () => {
+  console.log(`Servidor Pac-Man corriendo en http://localhost:${PUERTO}`);
+});
+
+===== proyecto2\style\estilos.css =====
+/* ============================================================
+   Estilos Pac-Man â€” Dark Neon Theme
+   Soporta modo claro / oscuro, vista expandida, overlays,
+   controles tÃ¡ctiles y diseÃ±o completamente responsive.
+   ============================================================ */
+
+/* â”€â”€ Variables modo oscuro (default Pac-Man) â”€â”€ */
+:root {
+  --bg-body:          #0f172a;
+  --bg-card:          rgba(17, 24, 39, 0.85);
+  --bg-card-solid:    #111827;
+  --bg-card-hover:    rgba(30, 41, 59, 0.95);
+  --texto-principal:  #f8fafc;
+  --texto-secundario: #94a3b8;
+  --borde-card:       rgba(99, 102, 241, 0.25);
+  --fondo-navbar:     #0a0f1e;
+  --texto-navbar:     #f8fafc;
+  --fondo-canvas:     #000000;
+
+  /* Neon accents */
+  --neon-yellow:  #facc15;
+  --neon-blue:    #3b82f6;
+  --neon-red:     #ef4444;
+  --neon-green:   #22c55e;
+  --neon-pink:    #ec4899;
+  --neon-purple:  #a855f7;
+
+  /* Pad jugadores */
+  --pad-j1-color:       #facc15;
+  --pad-j1-hover:       #eab308;
+  --pad-j1-text:        #0f172a;
+  --pad-j2-color:       #3b82f6;
+  --pad-j2-hover:       #2563eb;
+  --pad-j2-text:        #ffffff;
+
+  /* Overlay */
+  --overlay-bg:   rgba(0, 0, 0, 0.88);
+}
+
+/* â”€â”€ Variables modo claro â”€â”€ */
+[data-tema="claro"] {
+  --bg-body:          #f0f4f8;
+  --bg-card:          rgba(255, 255, 255, 0.92);
+  --bg-card-solid:    #ffffff;
+  --bg-card-hover:    rgba(241, 245, 249, 0.98);
+  --texto-principal:  #1e293b;
+  --texto-secundario: #64748b;
+  --borde-card:       #cbd5e1;
+  --fondo-navbar:     #1e293b;
+  --texto-navbar:     #f8fafc;
+  --fondo-canvas:     #000000;
+  --overlay-bg:       rgba(15, 23, 42, 0.85);
+}
+
+/* â”€â”€ Base â”€â”€ */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--bg-body);
+  color: var(--texto-principal);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  min-height: 100vh;
+}
+
+/* â”€â”€ PatrÃ³n de fondo sutil (modo oscuro) â”€â”€ */
+[data-tema="oscuro"] body,
+:root body {
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(250, 204, 21, 0.04) 0%, transparent 50%);
+}
+
+/* â”€â”€ Navbar â”€â”€ */
+#barraNav {
+  background-color: var(--fondo-navbar) !important;
+  border-bottom: 1px solid rgba(250, 204, 21, 0.15);
+  backdrop-filter: blur(10px);
+}
+#barraNav .navbar-brand,
+#barraNav .nav-link {
+  color: var(--texto-navbar) !important;
+  transition: color 0.2s ease;
+}
+#barraNav .navbar-brand {
+  text-shadow: 0 0 12px rgba(250, 204, 21, 0.6);
+}
+#barraNav .nav-link:hover {
+  color: var(--neon-yellow) !important;
+}
+
+/* â”€â”€ Cards con Glassmorphism â”€â”€ */
+.card,
+.card-glass {
+  background-color: var(--bg-card);
+  border: 1px solid var(--borde-card);
+  border-radius: 1rem !important;
+  color: var(--texto-principal);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.card:hover,
+.card-glass:hover {
+  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.35);
+}
+
+.card-header {
+  background: transparent;
+  border-bottom: 1px solid var(--borde-card);
+  border-radius: 1rem 1rem 0 0 !important;
+  color: var(--texto-principal);
+  padding: 0.75rem 1rem;
+}
+
+/* â”€â”€ Badge de puntaje â”€â”€ */
+.badge-puntaje {
+  background: linear-gradient(135deg, var(--neon-yellow), #f59e0b);
+  color: #0f172a;
+  font-size: 0.9rem;
+  font-weight: 700;
+  min-width: 48px;
+  padding: 0.3em 0.6em;
+  border-radius: 0.5rem;
+  box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
+}
+
+.badge-puntaje-j2 {
+  background: linear-gradient(135deg, var(--neon-blue), #1d4ed8);
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  min-width: 48px;
+  padding: 0.3em 0.6em;
+  border-radius: 0.5rem;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+}
+
+/* â”€â”€ BotÃ³n Iniciar Juego â”€â”€ */
+.btn-pacman {
+  background: linear-gradient(135deg, var(--neon-yellow), #f59e0b);
+  color: #0f172a;
+  border: none;
+  border-radius: 0.75rem;
+  font-weight: 700;
+  font-size: 1rem;
+  padding: 0.6rem 1.2rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 15px rgba(250, 204, 21, 0.3);
+}
+.btn-pacman:hover {
+  background: linear-gradient(135deg, #fde047, var(--neon-yellow));
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(250, 204, 21, 0.45);
+  color: #0f172a;
+}
+.btn-pacman:active {
+  transform: translateY(0);
+}
+
+/* â”€â”€ Nivel badge â”€â”€ */
+.nivel-badge-container {
+  display: flex;
+  align-items: center;
+}
+.nivel-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(99, 102, 241, 0.2));
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  border-radius: 2rem;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.85rem;
+  color: #c4b5fd;
+}
+.nivel-badge strong {
+  color: var(--neon-yellow);
+}
+
+/* â”€â”€ Vidas (corazones) â”€â”€ */
+.vida-icono {
+  color: var(--neon-red);
+  font-size: 1.1rem;
+  filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.6));
+  transition: opacity 0.3s ease;
+}
+.vida-icono.perdida {
+  color: #475569;
+  opacity: 0.35;
+  filter: none;
+}
+
+/* â”€â”€ Canvas vista configuraciÃ³n â”€â”€ */
+.canvas-config {
+  background-color: var(--fondo-canvas);
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 0.5rem;
+}
+
+/* â”€â”€ Canvas vista expandida â”€â”€ */
+.canvas-expandido {
+  background-color: var(--fondo-canvas);
+  width: 100%;
+  max-width: min(85vw, 85vh, 540px);
+  height: auto;
+  aspect-ratio: 420 / 441;
+  display: block;
+  border-radius: 0.75rem;
+  box-shadow:
+    0 0 0 1px rgba(250, 204, 21, 0.1),
+    0 0 40px rgba(250, 204, 21, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* Wrapper del canvas (necesario para overlays absolutos) */
+.canvas-wrapper {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* â”€â”€ Vista expandida â”€â”€ */
+.vista-expandida {
+  min-height: calc(100vh - 60px);
+}
+
+/* â”€â”€ Marcador expandido â”€â”€ */
+.marcador-expandido {
+  border: 1px solid rgba(250, 204, 21, 0.15) !important;
+}
+
+.marcador-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.marcador-avatar-j1 {
+  background: rgba(250, 204, 21, 0.15);
+  color: var(--neon-yellow);
+  box-shadow: 0 0 10px rgba(250, 204, 21, 0.2);
+}
+
+.marcador-nombre {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--texto-secundario);
+  margin-bottom: 0.15rem;
+}
+
+.marcador-stat-label {
+  font-size: 0.65rem;
+  color: var(--texto-secundario);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.marcador-stat-valor {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--neon-yellow);
+  text-shadow: 0 0 10px rgba(250, 204, 21, 0.4);
+  line-height: 1.2;
+}
+
+/* â”€â”€ Controles tÃ¡ctiles â”€â”€ */
+.controles-card {
+  border: 1px solid var(--borde-card) !important;
+}
+
+.controles-titulo {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--neon-yellow);
+}
+
+.controles-titulo-j2 {
+  color: var(--neon-blue);
+}
+
+/* Pad direccional */
+.pad-direccional {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 5px;
+  user-select: none;
+}
+
+.pad-fila {
+  display: flex;
+  gap: 5px;
+  justify-content: center;
+  align-items: center;
+}
+
+.pad-espacio {
+  width: 50px;
+  height: 50px;
+}
+
+.pad-centro {
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  border-radius: 50%;
+  background: rgba(250, 204, 21, 0.08);
+  color: var(--neon-yellow);
+  opacity: 0.7;
+}
+
+.pad-centro-j2 {
+  background: rgba(59, 130, 246, 0.08);
+  color: var(--neon-blue);
+}
+
+/* BotÃ³n pad J1 */
+.btn-pad {
+  width: 50px;
+  height: 50px;
+  border: none;
+  border-radius: 12px;
+  color: var(--pad-j1-text);
+  background: linear-gradient(135deg, var(--pad-j1-color), #f59e0b);
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  box-shadow:
+    0 4px 0 rgba(0,0,0,0.3),
+    0 0 12px rgba(250, 204, 21, 0.2);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.btn-pad:hover {
+  background: linear-gradient(135deg, #fde047, var(--pad-j1-color));
+  box-shadow:
+    0 4px 0 rgba(0,0,0,0.3),
+    0 0 18px rgba(250, 204, 21, 0.4);
+}
+
+.btn-pad:active {
+  transform: translateY(3px);
+  box-shadow:
+    0 1px 0 rgba(0,0,0,0.3),
+    0 0 8px rgba(250, 204, 21, 0.2);
+}
+
+/* BotÃ³n pad J2 */
+.btn-pad-j2 {
+  color: var(--pad-j2-text);
+  background: linear-gradient(135deg, var(--pad-j2-color), #1d4ed8);
+  box-shadow:
+    0 4px 0 rgba(0,0,0,0.3),
+    0 0 12px rgba(59, 130, 246, 0.2);
+}
+
+.btn-pad-j2:hover {
+  background: linear-gradient(135deg, #60a5fa, var(--pad-j2-color));
+  box-shadow:
+    0 4px 0 rgba(0,0,0,0.3),
+    0 0 18px rgba(59, 130, 246, 0.4);
+  color: #ffffff;
+}
+
+.btn-pad-j2:active {
+  transform: translateY(3px);
+  box-shadow:
+    0 1px 0 rgba(0,0,0,0.3),
+    0 0 8px rgba(59, 130, 246, 0.2);
+}
+
+/* â”€â”€ OVERLAYS (Pausa / Game Over / Victoria) â”€â”€ */
+.overlay-juego {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--overlay-bg);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  border-radius: 0.75rem;
+  animation: overlayFadeIn 0.3s ease;
+}
+
+@keyframes overlayFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.overlay-entrando {
+  animation: overlaySlideIn 0.3s ease;
+}
+
+@keyframes overlaySlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.overlay-contenido {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1.5rem;
+  max-width: 280px;
+  width: 90%;
+  text-align: center;
+}
+
+.overlay-icono {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+  animation: iconoPulse 2s ease-in-out infinite;
+}
+
+@keyframes iconoPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.overlay-titulo {
+  font-size: 2rem;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  color: var(--texto-principal);
+  text-shadow: 0 0 20px currentColor;
+  margin-bottom: 0.25rem;
+}
+
+.overlay-titulo-danger {
+  color: var(--neon-red);
+  text-shadow: 0 0 20px rgba(239, 68, 68, 0.7);
+}
+
+.overlay-titulo-victory {
+  color: var(--neon-yellow);
+  text-shadow: 0 0 20px rgba(250, 204, 21, 0.7);
+}
+
+.overlay-puntaje-final {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--neon-yellow);
+  margin-top: 0.5rem;
+}
+
+.overlay-nivel-final {
+  font-size: 0.85rem;
+  color: var(--texto-secundario);
+  margin-top: 0.25rem;
+}
+
+/* Botones de overlay */
+.btn-overlay-primary {
+  width: 100%;
+  padding: 0.65rem 1rem;
+  border: none;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, var(--neon-yellow), #f59e0b);
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 15px rgba(250, 204, 21, 0.3);
+}
+.btn-overlay-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(250, 204, 21, 0.45);
+}
+
+.btn-overlay-secondary {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 0.75rem;
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-overlay-secondary:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.6);
+}
+
+.btn-overlay-ghost {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.75rem;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--texto-secundario);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-overlay-ghost:hover {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--texto-principal);
+}
+
+/* â”€â”€ Lista de jugadores â”€â”€ */
+.list-group-item {
+  background-color: transparent;
+  border-color: var(--borde-card);
+  color: var(--texto-principal);
+  transition: background-color 0.2s ease;
+}
+.list-group-item:hover {
+  background-color: rgba(250, 204, 21, 0.05);
+}
+
+/* â”€â”€ Inputs â”€â”€ */
+.form-control,
+.form-select {
+  background-color: rgba(30, 41, 59, 0.6);
+  border-color: var(--borde-card);
+  color: var(--texto-principal);
+  border-radius: 0.6rem;
+  transition: all 0.2s ease;
+}
+.form-control:focus,
+.form-select:focus {
+  background-color: rgba(30, 41, 59, 0.8);
+  border-color: var(--neon-yellow);
+  color: var(--texto-principal);
+  box-shadow: 0 0 0 0.2rem rgba(250, 204, 21, 0.2);
+}
+.form-control::placeholder {
+  color: var(--texto-secundario);
+}
+
+[data-tema="claro"] .form-control,
+[data-tema="claro"] .form-select {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+[data-tema="claro"] .form-control:focus,
+[data-tema="claro"] .form-select:focus {
+  background-color: #ffffff;
+  border-color: #f59e0b;
+  color: #1e293b;
+  box-shadow: 0 0 0 0.2rem rgba(245, 158, 11, 0.25);
+}
+
+/* â”€â”€ Alertas â”€â”€ */
+.alert-info {
+  background-color: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+  border-radius: 0.75rem;
+}
+.alert-danger {
+  background-color: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  border-radius: 0.75rem;
+}
+.alert-warning {
+  background-color: rgba(250, 204, 21, 0.1);
+  border-color: rgba(250, 204, 21, 0.3);
+  color: #fde68a;
+  border-radius: 0.75rem;
+}
+.alert-success {
+  background-color: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #86efac;
+  border-radius: 0.75rem;
+}
+
+/* â”€â”€ Scroll lista â”€â”€ */
+.card-body .list-group {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* â”€â”€ Scrollbar â”€â”€ */
+::-webkit-scrollbar        { width: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: rgba(250, 204, 21, 0.25); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(250, 204, 21, 0.45); }
+
+/* â”€â”€ Modo claro: ajustes especÃ­ficos â”€â”€ */
+[data-tema="claro"] .card,
+[data-tema="claro"] .card-glass {
+  background-color: rgba(255, 255, 255, 0.92);
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+[data-tema="claro"] .nivel-badge {
+  color: #7c3aed;
+  border-color: rgba(124, 58, 237, 0.35);
+  background: rgba(124, 58, 237, 0.08);
+}
+[data-tema="claro"] .nivel-badge strong {
+  color: #b45309;
+}
+[data-tema="claro"] .marcador-stat-valor {
+  color: #b45309;
+  text-shadow: none;
+}
+[data-tema="claro"] .controles-titulo {
+  color: #b45309;
+}
+[data-tema="claro"] .controles-titulo-j2 {
+  color: #1d4ed8;
+}
+[data-tema="claro"] .pad-centro {
+  background: rgba(245, 158, 11, 0.1);
+  color: #b45309;
+}
+[data-tema="claro"] .pad-centro-j2 {
+  background: rgba(29, 78, 216, 0.1);
+  color: #1d4ed8;
+}
+[data-tema="claro"] .alert-info {
+  background-color: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+[data-tema="claro"] .alert-danger {
+  background-color: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+[data-tema="claro"] .list-group-item:hover {
+  background-color: rgba(245, 158, 11, 0.05);
+}
+
+/* â”€â”€ Responsive: celulares â”€â”€ */
+@media (max-width: 576px) {
+  .canvas-expandido {
+    max-width: 96vw;
+    border-radius: 0.5rem;
+  }
+
+  .btn-pad {
+    width: 56px;
+    height: 56px;
+    font-size: 1.2rem;
+    border-radius: 14px;
+  }
+
+  .pad-espacio {
+    width: 56px;
+    height: 56px;
+  }
+
+  .pad-centro {
+    width: 56px;
+    height: 56px;
+  }
+
+  .overlay-titulo {
+    font-size: 1.6rem;
+  }
+
+  .overlay-icono {
+    font-size: 2.4rem;
+  }
+
+  .marcador-stat-valor {
+    font-size: 1rem;
+  }
+}
+
+/* â”€â”€ Responsive: tablets â”€â”€ */
+@media (min-width: 577px) and (max-width: 991px) {
+  .canvas-expandido {
+    max-width: 80vw;
+  }
+
+  .btn-pad {
+    width: 54px;
+    height: 54px;
+  }
+
+  .pad-espacio {
+    width: 54px;
+    height: 54px;
+  }
+
+  .pad-centro {
+    width: 54px;
+    height: 54px;
+  }
+}
+
+/* â”€â”€ Responsive: desktop grande â”€â”€ */
+@media (min-width: 1200px) {
+  .canvas-expandido {
+    max-width: min(75vh, 520px);
+  }
+}
+

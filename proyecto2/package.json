@@ -1,0 +1,13 @@
+{
+  "name": "proyecto2-pacman",
+  "version": "1.0.0",
+  "description": "Juego Pac-Man con modo 2 jugadores y persistencia de puntajes",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
